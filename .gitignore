@@ -1,0 +1,44 @@
+# Files without extensions (keep directories traversable)
+*
+!*.*
+!*/
+!LICENSE
+
+# Windows executables
+*.exe
+
+# Text files are local data by default; only dependency manifests and examples belong in Git.
+*.txt
+!requirements.txt
+!deploy/
+deploy/*.txt.example
+
+# Other generated binaries and build output
+*.out
+*.test
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+/build/
+
+# Local Go caches
+.gocache/
+.gomodcache/
+.goappdata/
+__pycache__/
+
+# Build artifacts
+/HopLink*
+
+# Local deployment secrets and client credentials
+/.HopLink/
+/.user_links.json
+/deploy/
+!/deploy/
+deploy/*.txt
+!deploy/*.txt.example
+deploy/.user_links.json
+deploy/hy2-server.crt
+deploy/hy2-server.key
