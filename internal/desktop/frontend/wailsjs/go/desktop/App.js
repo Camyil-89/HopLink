@@ -10,6 +10,10 @@ export function CancelApply() {
   return window['go']['desktop']['App']['CancelApply']();
 }
 
+export function CheckDesktopUpdate() {
+  return window['go']['desktop']['App']['CheckDesktopUpdate']();
+}
+
 export function CheckRouteServices() {
   return window['go']['desktop']['App']['CheckRouteServices']();
 }
@@ -22,6 +26,10 @@ export function DeleteServer(arg1) {
   return window['go']['desktop']['App']['DeleteServer'](arg1);
 }
 
+export function GetDesktopVersion() {
+  return window['go']['desktop']['App']['GetDesktopVersion']();
+}
+
 export function GetLinks() {
   return window['go']['desktop']['App']['GetLinks']();
 }
@@ -32,6 +40,10 @@ export function GetState() {
 
 export function GetVaultStatus() {
   return window['go']['desktop']['App']['GetVaultStatus']();
+}
+
+export function OpenDesktopUpdate() {
+  return window['go']['desktop']['App']['OpenDesktopUpdate']();
 }
 
 export function RemoveHoplink(arg1) {
@@ -68,6 +80,10 @@ export function SaveUsers(arg1) {
 
 export function SelectRoute(arg1) {
   return window['go']['desktop']['App']['SelectRoute'](arg1);
+}
+
+export function SetInstallSource(arg1) {
+  return window['go']['desktop']['App']['SetInstallSource'](arg1);
 }
 
 export function SetVaultPassword(arg1) {

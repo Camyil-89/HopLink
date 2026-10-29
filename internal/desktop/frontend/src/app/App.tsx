@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { addEdge, applyEdgeChanges, applyNodeChanges, type Connection, type Edge as FlowEdge, type Node as FlowNode, type OnNodesChange, type OnEdgesChange } from '@xyflow/react'
-import { Map, Server as ServerIcon, Trash2 } from 'lucide-react'
+import { Map, Server as ServerIcon, Settings2, Trash2 } from 'lucide-react'
 import * as AppApi from '../../wailsjs/go/desktop/App'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { Sidebar, Topbar, RouteWorkspaceHeader, type NavigationItem } from '../components/AppChrome'
@@ -12,6 +12,7 @@ import { SettingsTab } from '../tabs/SettingsTab'
 import { UsersTab } from '../tabs/UsersTab'
 import { ServersTab } from '../tabs/ServersTab'
 import { RemoveTab } from '../tabs/RemoveTab'
+import { DesktopSettingsTab } from '../tabs/DesktopSettingsTab'
 import { UnsavedChangesModal } from '../modals/UnsavedChangesModal'
 import { RouteModal } from '../modals/RouteModal'
 import { RemoveRouteServiceModal } from '../modals/RemoveRouteServiceModal'
@@ -127,7 +128,7 @@ export default function App(){
  }
  const onDrop=(ev:DragEvent)=>{ev.preventDefault();const id=ev.dataTransfer.getData('application/hoplink-server');const s=state.servers.find(x=>x.id===id);if(!s)return;const rect=(ev.currentTarget as HTMLElement).getBoundingClientRect();const x=Math.round((ev.clientX-rect.left-100)/20)*20,y=Math.round((ev.clientY-rect.top-30)/20)*20;setNodes(ns=>[...ns,{id:s.id,position:{x,y},data:{server:{...s,x,y}},type:'server'}])}
  const onNodeClick=(_:unknown,node:FlowNode)=>setActiveNode(node.id)
- const nav:NavigationItem[]=[{id:'routes',label:'Маршруты',icon:Map},{id:'servers',label:'Серверы',icon:ServerIcon},{id:'remove',label:'Удалить HopLink',icon:Trash2}]
+ const nav:NavigationItem[]=[{id:'routes',label:'Маршруты',icon:Map},{id:'servers',label:'Серверы',icon:ServerIcon},{id:'remove',label:'Удалить HopLink',icon:Trash2},{id:'desktop-settings',label:'Настройки',icon:Settings2}]
   if (!vaultStatus || vaultStatus.locked || (vaultStatus.needsSetup && vaultStatus.hasData)) {
     return (
       <div className="vault-screen">
@@ -158,7 +159,7 @@ export default function App(){
         onToggle={() => setCollapsed(value => !value)}
         onNavigate={navigateTo}
       />
-      <main className={`main ${page === 'routes' && routeChosen && routeTab === 'map' ? 'route-map-main' : ''}`}>
+      <main className={`main ${page === 'routes' && routeChosen && routeTab === 'map' ? 'route-map-main' : page === 'routes' && !routeChosen ? 'route-list-main' : ''}`}>
         <Topbar section={nav.find(item => item.id === page)?.label || 'Маршруты'} routeName={page === 'routes' && routeChosen ? activeRouteName : undefined} />
         {page === 'routes' && !routeChosen && <RoutesTab routes={state.routes} statuses={routeStatuses} checking={checkingRoutes} onCheck={() => void checkRouteServices()} onSelect={selectRoute} onCreate={() => { setRouteName(''); setRouteForm(true) }} />}
         {page === 'routes' && routeChosen && <RouteWorkspaceHeader
@@ -220,6 +221,7 @@ export default function App(){
           onToggle={(id, active) => void toggleUser(id, active)}
         />}
         {page === 'servers' && <ServersTab state={state} busy={busy} onAdd={openAddServer} onEdit={openEditServer} onDelete={id => void deleteServer(id)} />}
+        {page === 'desktop-settings' && <DesktopSettingsTab installSource={state.installSource === 'source' ? 'source' : 'github'} onInstallSourceChange={async source => { await api().SetInstallSource(source); setState(current => ({ ...current, installSource: source })) }} />}
         {page === 'remove' && routeChosen && <RemoveTab
           state={state}
           selected={selected}

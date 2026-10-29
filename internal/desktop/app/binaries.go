@@ -63,3 +63,10 @@ func (a *App) buildServerBinary(ctx context.Context, arch string) (string, error
 	a.log(fmt.Sprintf("Linux/%s собран: %d байт, SHA256 %x", arch, len(data), digest[:]))
 	return out, nil
 }
+
+func (a *App) serverBinary(ctx context.Context, arch, source string) (string, error) {
+	if source == "github" {
+		return a.downloadServerBinary(ctx, arch)
+	}
+	return a.buildServerBinary(ctx, arch)
+}

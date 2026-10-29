@@ -6,17 +6,23 @@ export function Apply():Promise<void>;
 
 export function CancelApply():Promise<boolean>;
 
+export function CheckDesktopUpdate():Promise<desktop.DesktopUpdate>;
+
 export function CheckRouteServices():Promise<Array<desktop.RouteServiceStatus>>;
 
 export function CreateRoute(arg1:string):Promise<desktop.AppConfig>;
 
 export function DeleteServer(arg1:string):Promise<desktop.AppConfig>;
 
+export function GetDesktopVersion():Promise<string>;
+
 export function GetLinks():Promise<Record<string, string>>;
 
 export function GetState():Promise<desktop.AppConfig>;
 
 export function GetVaultStatus():Promise<desktop.VaultStatus>;
+
+export function OpenDesktopUpdate():Promise<void>;
 
 export function RemoveHoplink(arg1:Array<string>):Promise<desktop.AppConfig>;
 
@@ -35,6 +41,8 @@ export function SaveSettings(arg1:string,arg2:number,arg3:string):Promise<deskto
 export function SaveUsers(arg1:Array<desktop.User>):Promise<desktop.AppConfig>;
 
 export function SelectRoute(arg1:string):Promise<desktop.AppConfig>;
+
+export function SetInstallSource(arg1:string):Promise<void>;
 
 export function SetVaultPassword(arg1:string):Promise<void>;
 

@@ -169,13 +169,24 @@ func (a *App) apply(ctx context.Context) error {
 	bins := map[string]string{}
 	for _, arch := range archs {
 		if bins[arch] == "" {
-			a.log("Собираю HopLink для Linux/" + arch + " из исходников…")
-			p, e := a.buildServerBinary(ctx, arch)
+			if cfg.InstallSource == "github" {
+				a.log("Скачиваю последний HopLink для Linux/" + arch + " с GitHub…")
+			} else {
+				a.log("Собираю HopLink для Linux/" + arch + " из исходников…")
+			}
+			p, e := a.serverBinary(ctx, arch, cfg.InstallSource)
 			if e != nil {
 				return e
 			}
 			bins[arch] = p
 		}
+	}
+	if cfg.InstallSource == "github" {
+		defer func() {
+			for _, path := range bins {
+				_ = os.Remove(path)
+			}
+		}()
 	}
 	for _, old := range cfg.DeployedServers {
 		if len(oldLayouts) == 0 {

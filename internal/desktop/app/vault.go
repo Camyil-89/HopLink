@@ -27,7 +27,7 @@ type remoteLayout struct {
 }
 
 func defaultConfig() AppConfig {
-	return AppConfig{Servers: []Server{}, MapServers: []Server{}, DeployedServers: []Server{}, Users: []User{}, Edges: []Edge{}, Routes: []Route{}, SNI: "www.cloudflare.com", Port: defaultPort, KnownHosts: map[string]string{}}
+	return AppConfig{InstallSource: "github", Servers: []Server{}, MapServers: []Server{}, DeployedServers: []Server{}, Users: []User{}, Edges: []Edge{}, Routes: []Route{}, SNI: "www.cloudflare.com", Port: defaultPort, KnownHosts: map[string]string{}}
 }
 
 func deriveVaultKey(password string, salt []byte) []byte {

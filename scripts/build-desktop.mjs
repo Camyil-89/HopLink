@@ -20,4 +20,19 @@ const result = spawnSync(useGoRun ? 'go' : 'wails', args, {
 })
 
 if (result.error) throw result.error
-process.exit(result.status ?? 1)
+if ((result.status ?? 1) !== 0) process.exit(result.status ?? 1)
+
+// The executable is rebuilt at the same path, so ask Explorer to reload its
+// icon instead of continuing to show a cached icon from the previous build.
+if (process.platform === 'win32') {
+  const executable = path.join(repoRoot, 'deploy', 'HopLink.exe')
+  const quotePowerShell = value => `'${value.replaceAll("'", "''")}'`
+  const signature = 'using System; using System.Runtime.InteropServices; public static class HopLinkShellNotify { [DllImport("shell32.dll", CharSet=CharSet.Unicode)] public static extern void SHChangeNotify(uint eventId, uint flags, string path, IntPtr item2); }'
+  const command = `Add-Type -TypeDefinition '${signature}'; [HopLinkShellNotify]::SHChangeNotify(0x2000, 0x0005, ${quotePowerShell(executable)}, [IntPtr]::Zero); [HopLinkShellNotify]::SHChangeNotify(0x1000, 0x0005, ${quotePowerShell(path.dirname(executable))}, [IntPtr]::Zero)`
+  const refresh = spawnSync('powershell.exe', ['-NoProfile', '-Command', command], { stdio: 'ignore' })
+  if (refresh.error || refresh.status !== 0) {
+    console.warn('Could not notify Explorer to refresh the HopLink icon.')
+  }
+}
+
+process.exit(0)

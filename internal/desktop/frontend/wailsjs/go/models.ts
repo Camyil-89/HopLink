@@ -1,5 +1,5 @@
 export namespace desktop {
-	
+
 	export class Route {
 	    id: string;
 	    name: string;
@@ -16,11 +16,11 @@ export namespace desktop {
 	    chainKey: string;
 	    certificate: string;
 	    certificateKey: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Route(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -39,7 +39,7 @@ export namespace desktop {
 	        this.certificate = source["certificate"];
 	        this.certificateKey = source["certificateKey"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -62,11 +62,11 @@ export namespace desktop {
 	    id: string;
 	    source: string;
 	    target: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Edge(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -80,11 +80,11 @@ export namespace desktop {
 	    password: string;
 	    link: string;
 	    active?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new User(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -106,11 +106,11 @@ export namespace desktop {
 	    x: number;
 	    y: number;
 	    role?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Server(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -127,6 +127,7 @@ export namespace desktop {
 	    }
 	}
 	export class AppConfig {
+	    installSource?: string;
 	    servers: Server[];
 	    mapServers: Server[];
 	    deployedServers?: Server[];
@@ -141,13 +142,14 @@ export namespace desktop {
 	    certificate: string;
 	    certificateKey: string;
 	    knownHosts: Record<string, string>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.installSource = source["installSource"];
 	        this.servers = this.convertValues(source["servers"], Server);
 	        this.mapServers = this.convertValues(source["mapServers"], Server);
 	        this.deployedServers = this.convertValues(source["deployedServers"], Server);
@@ -163,7 +165,7 @@ export namespace desktop {
 	        this.certificateKey = source["certificateKey"];
 	        this.knownHosts = source["knownHosts"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -182,17 +184,35 @@ export namespace desktop {
 		    return a;
 		}
 	}
-	
-	
+	export class DesktopUpdate {
+	    installed: string;
+	    latest: string;
+	    available: boolean;
+	    url: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DesktopUpdate(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.installed = source["installed"];
+	        this.latest = source["latest"];
+	        this.available = source["available"];
+	        this.url = source["url"];
+	    }
+	}
+
+
 	export class ServerServiceStatus {
 	    serverId: string;
 	    running: boolean;
 	    error?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ServerServiceStatus(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.serverId = source["serverId"];
@@ -205,11 +225,11 @@ export namespace desktop {
 	    running: number;
 	    total: number;
 	    servers: ServerServiceStatus[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RouteServiceStatus(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.routeId = source["routeId"];
@@ -217,7 +237,7 @@ export namespace desktop {
 	        this.total = source["total"];
 	        this.servers = this.convertValues(source["servers"], ServerServiceStatus);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -236,19 +256,19 @@ export namespace desktop {
 		    return a;
 		}
 	}
-	
-	
-	
+
+
+
 	export class VaultStatus {
 	    locked: boolean;
 	    needsSetup: boolean;
 	    hasData: boolean;
 	    error: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new VaultStatus(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.locked = source["locked"];

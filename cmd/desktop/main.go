@@ -14,6 +14,7 @@ import (
 var version = "dev"
 
 func main() {
+	desktop.DesktopVersion = version
 	app := desktop.NewApp()
 	err := wails.Run(&options.App{
 		Title: fmt.Sprintf("HopLink %s", version), Width: 1600, Height: 1000, MinWidth: 1180, MinHeight: 760,

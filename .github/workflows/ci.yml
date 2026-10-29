@@ -83,6 +83,16 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: internal/desktop/frontend/package-lock.json
+      - name: Install Wails CLI
+        if: matrix.component == 'desktop-hoplink'
+        shell: pwsh
+        run: |
+          $wailsBin = Join-Path $env:RUNNER_TEMP 'wails-bin'
+          New-Item -ItemType Directory -Force $wailsBin | Out-Null
+          $env:GOBIN = $wailsBin
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content -Path $env:GITHUB_PATH -Value $wailsBin
       - name: Test Go packages
         if: matrix.component == 'hoplink'
         run: go test ./...
@@ -93,13 +103,20 @@ jobs:
           HOPLINK_VERSION: ${{ needs.versions.outputs.hoplink_version }}
         run: |
           $suffix = if ($IsWindows) { '.exe' } else { '' }
-          go build -ldflags "-X main.version=$env:HOPLINK_VERSION" -o "deploy/hoplink-$env:RUNNER_OS$suffix" ./cmd/hoplink
+          $binaryName = if ($IsLinux) { 'deploy/hoplink-Linux-amd64' } else { "deploy/hoplink-$env:RUNNER_OS$suffix" }
+          go build -ldflags "-X main.version=$env:HOPLINK_VERSION" -o $binaryName ./cmd/hoplink
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($IsLinux) {
+            $env:GOARCH = 'arm64'
+            $env:CGO_ENABLED = '0'
+            go build -ldflags "-X main.version=$env:HOPLINK_VERSION" -o deploy/hoplink-Linux-arm64 ./cmd/hoplink
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Build desktop
         if: matrix.component == 'desktop-hoplink'
         env:
           DESKTOP_VERSION: ${{ needs.versions.outputs.desktop_version }}
-        run: node scripts/build-desktop.mjs --go-run
+        run: node scripts/build-desktop.mjs
       - name: Package binary
         shell: pwsh
         env:
@@ -109,7 +126,7 @@ jobs:
         run: |
           $platform = $env:RUNNER_OS.ToLowerInvariant()
           if ($env:COMPONENT -eq 'hoplink') {
-            $source = if ($IsWindows) { 'deploy/hoplink-Windows.exe' } else { "deploy/hoplink-$env:RUNNER_OS" }
+            $source = if ($IsWindows) { 'deploy/hoplink-Windows.exe' } elseif ($IsLinux) { 'deploy/hoplink-Linux-amd64' } else { 'deploy/hoplink-Darwin' }
             $version = $env:HOPLINK_VERSION
           } else {
             $source = if ($IsWindows) { 'deploy/HopLink.exe' } elseif ($IsMacOS) { 'deploy/HopLink.app' } else { 'deploy/HopLink' }
@@ -118,15 +135,31 @@ jobs:
           if (-not (Test-Path -LiteralPath $source)) { throw "Expected build output missing: $source" }
           New-Item -ItemType Directory -Force release | Out-Null
           $archive = "release/$env:COMPONENT-v$version-$platform.zip"
+          $archivePath = Join-Path (Resolve-Path release).Path "$env:COMPONENT-v$version-$platform.zip"
           if ($env:COMPONENT -eq 'desktop-hoplink') {
             New-Item -ItemType Directory -Force package/deploy, package/cmd, package/internal | Out-Null
             Copy-Item -LiteralPath $source -Destination package/deploy -Recurse
             Copy-Item -LiteralPath cmd/hoplink -Destination package/cmd -Recurse
             Copy-Item -LiteralPath internal/hoplink -Destination package/internal -Recurse
             Copy-Item -LiteralPath go.mod,go.sum -Destination package
-            Compress-Archive -Path package/* -DestinationPath $archive
+            if ($IsWindows) {
+              Compress-Archive -Path package/* -DestinationPath $archive
+            } else {
+              Push-Location package
+              zip -qry $archivePath .
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              Pop-Location
+            }
           } else {
-            Compress-Archive -LiteralPath $source -DestinationPath $archive
+            if ($IsLinux) {
+              zip -j $archivePath $source deploy/hoplink-Linux-arm64
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            } elseif ($IsMacOS) {
+              zip -j $archivePath $source
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            } else {
+              Compress-Archive -LiteralPath $source -DestinationPath $archive
+            }
           }
       - uses: actions/upload-artifact@v4
         with:
@@ -166,3 +199,10 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$COMPONENT-v$VERSION" release/*.zip --target "$GITHUB_SHA" --title "$COMPONENT v$VERSION" --generate-notes
+          gh release delete "$COMPONENT-latest" --cleanup-tag --yes 2>/dev/null || true
+          mkdir -p latest
+          for file in release/*.zip; do
+            name=$(basename "$file")
+            cp "$file" "latest/${name/-v$VERSION/}"
+          done
+          gh release create "$COMPONENT-latest" latest/*.zip --target "$GITHUB_SHA" --title "$COMPONENT latest ($VERSION)" --notes "Latest $COMPONENT build: v$VERSION" --latest=false

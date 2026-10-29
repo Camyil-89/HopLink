@@ -45,5 +45,7 @@ node scripts/build-desktop.mjs
 
 При push или merge в `main` CI собирает `hoplink` и `desktop-hoplink` для Windows, Linux и macOS. Изменения в `cmd/hoplink/` или `internal/hoplink/` создают релиз `hoplink-vX.Y.Z`; изменения в `cmd/desktop/`, `internal/desktop/` или `scripts/build-desktop.mjs` создают `desktop-hoplink-vX.Y.Z`. Изменения `go.mod` и `go.sum` затрагивают оба приложения. Версии независимы и автоматически повышают patch-число от последнего тега соответствующего приложения.
 
+Для постоянных ссылок CI также обновляет релизы `hoplink-latest` и `desktop-hoplink-latest` с архивами `hoplink-linux.zip`, `desktop-hoplink-windows.zip` и аналогичными для других платформ. В приложении вкладка «Настройки» показывает установленную и последнюю версию desktop. Кнопка «Обновить» скачивает архив для текущей системы; заменять файлы следует после закрытия приложения. Там же можно выбрать сборку Linux-сервиса из исходников или скачивание последнего релиза GitHub при Apply.
+
 Архив desktop включает исходники Linux-сервиса и Go-манифесты: они нужны для сборки сервиса при Apply. Go должен быть доступен в `PATH` на машине, где запущен desktop.
 

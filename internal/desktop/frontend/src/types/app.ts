@@ -34,6 +34,7 @@ export type Route = {
 }
 
 export type AppState = {
+  installSource?: string
   servers: Server[]
   mapServers: Server[]
   deployedServers?: Server[]

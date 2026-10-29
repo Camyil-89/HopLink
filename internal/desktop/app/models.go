@@ -42,6 +42,7 @@ type Edge struct {
 	Target string `json:"target"`
 }
 type AppConfig struct {
+	InstallSource   string            `json:"installSource,omitempty"`
 	Servers         []Server          `json:"servers"`
 	MapServers      []Server          `json:"mapServers"`
 	DeployedServers []Server          `json:"deployedServers,omitempty"`
