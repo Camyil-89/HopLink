@@ -25,6 +25,11 @@ export function ServerNode({ data, selected }: NodeProps) {
       <span className="node-text">
         <b>{server.name || server.host}</b>
         <small>{server.host}:{server.sshPort}</small>
+        {serviceStatus && <small className={`node-version ${serviceStatus.versionCurrent === undefined ? 'unknown' : serviceStatus.versionCurrent ? 'current' : 'outdated'}`}>
+          {serviceStatus.version
+            ? `v${serviceStatus.version} · ${serviceStatus.version === 'dev' ? 'сборка из исходников' : serviceStatus.versionCurrent === undefined ? 'актуальность неизвестна' : serviceStatus.versionCurrent ? 'актуальна' : 'устарела'}`
+            : 'версия неизвестна'}
+        </small>}
       </span>
       <span className={`node-role ${role}`}>
         {role === 'entry' ? 'ВХОДНАЯ ТОЧКА' : role === 'exit' ? 'ВЫХОДНАЯ ТОЧКА' : 'УЗЕЛ ЦЕПОЧКИ'}

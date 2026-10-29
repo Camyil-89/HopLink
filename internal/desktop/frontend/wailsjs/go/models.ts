@@ -209,6 +209,9 @@ export namespace desktop {
 	export class ServerServiceStatus {
 	    serverId: string;
 	    running: boolean;
+	    version?: string;
+	    latestVersion?: string;
+	    versionCurrent?: boolean;
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -219,6 +222,9 @@ export namespace desktop {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.serverId = source["serverId"];
 	        this.running = source["running"];
+	        this.version = source["version"];
+	        this.latestVersion = source["latestVersion"];
+	        this.versionCurrent = source["versionCurrent"];
 	        this.error = source["error"];
 	    }
 	}

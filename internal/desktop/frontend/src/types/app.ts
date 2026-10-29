@@ -14,7 +14,7 @@ export type Server = {
 
 export type User = { id: string; name: string; password: string; link: string; active?: boolean }
 export type Edge = { id: string; source: string; target: string }
-export type ServerServiceStatus = { serverId: string; running: boolean; error?: string }
+export type ServerServiceStatus = { serverId: string; running: boolean; version?: string; latestVersion?: string; versionCurrent?: boolean; error?: string }
 export type RouteServiceStatus = { routeId: string; running: number; total: number; servers: ServerServiceStatus[] }
 
 export type Route = {
