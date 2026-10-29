@@ -81,9 +81,6 @@ func (a *App) Startup(ctx context.Context) {
 	} else {
 		a.vaultNeedsSetup = true
 	}
-	if a.config.SNI == "" {
-		a.config.SNI = "www.cloudflare.com"
-	}
 	if a.config.Port == 0 {
 		a.config.Port = defaultPort
 	}

@@ -17,6 +17,8 @@ export namespace desktop {
 	    certificate: string;
 	    certificateKey: string;
 	    logLevel?: string;
+	    obfsType?: string;
+	    obfsPassword?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Route(source);
@@ -40,6 +42,8 @@ export namespace desktop {
 	        this.certificate = source["certificate"];
 	        this.certificateKey = source["certificateKey"];
 	        this.logLevel = source["logLevel"];
+	        this.obfsType = source["obfsType"];
+	        this.obfsPassword = source["obfsPassword"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -144,6 +148,8 @@ export namespace desktop {
 	    certificate: string;
 	    certificateKey: string;
 	    logLevel?: string;
+	    obfsType?: string;
+	    obfsPassword?: string;
 	    knownHosts: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -167,6 +173,8 @@ export namespace desktop {
 	        this.certificate = source["certificate"];
 	        this.certificateKey = source["certificateKey"];
 	        this.logLevel = source["logLevel"];
+	        this.obfsType = source["obfsType"];
+	        this.obfsPassword = source["obfsPassword"];
 	        this.knownHosts = source["knownHosts"];
 	    }
 	

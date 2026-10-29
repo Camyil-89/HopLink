@@ -20,9 +20,17 @@ func routeNodeArgs(cfg AppConfig, order []Server, index int, installDir string) 
 	}
 	args := []string{installDir + "/HopLink", "-hy2-listen", ":" + strconv.Itoa(cfg.Port), "-log-level", level}
 	if index < len(order)-1 {
-		return append(args, "-mode", "udp-relay", "-f", net.JoinHostPort(order[index+1].Host, strconv.Itoa(cfg.Port)))
+		args = append(args, "-mode", "udp-relay", "-f", net.JoinHostPort(order[index+1].Host, strconv.Itoa(cfg.Port)))
+		if cfg.ObfsType != "" {
+			args = append(args, "-relay-obfs", cfg.ObfsType)
+		}
+		return args
 	}
-	return append(args, "-mode", "hy2-forward", "-key-file", installDir+"/shared.key", "-hy2-users-file", installDir+"/users.txt", "-hy2-sni", cfg.SNI, "-hy2-cert", installDir+"/hy2-server.crt", "-hy2-cert-key", installDir+"/hy2-server.key")
+	args = append(args, "-mode", "hy2-forward", "-key-file", installDir+"/shared.key", "-hy2-users-file", installDir+"/users.txt", "-hy2-sni", cfg.SNI, "-hy2-cert", installDir+"/hy2-server.crt", "-hy2-cert-key", installDir+"/hy2-server.key")
+	if cfg.ObfsType != "" {
+		args = append(args, "-hy2-obfs", cfg.ObfsType, "-hy2-obfs-key-file", installDir+"/obfs.key")
+	}
+	return args
 }
 
 func routeUserLinks(cfg AppConfig, entry Server, users []User) (map[string]string, error) {
@@ -39,16 +47,21 @@ func routeUserLinks(cfg AppConfig, entry Server, users []User) (map[string]strin
 		host = entry.Host
 	}
 	host = strings.Trim(strings.TrimSpace(host), "[]")
-	sni := cfg.SNI
-	if sni == "" {
-		sni = "www.cloudflare.com"
-	}
 	links := make(map[string]string, len(users))
 	for _, user := range users {
 		if !user.isActive() {
 			continue
 		}
-		u := &url.URL{Scheme: "hysteria2", User: url.User(user.Password), Host: net.JoinHostPort(host, strconv.Itoa(cfg.Port)), Path: "/", RawQuery: url.Values{"pinSHA256": {hex.EncodeToString(pin[:])}, "sni": {sni}}.Encode(), Fragment: "HopLink-" + user.Name}
+		// Trust the route certificate by its pin, including self-signed certificates.
+		query := url.Values{"insecure": {"1"}, "pinSHA256": {hex.EncodeToString(pin[:])}}
+		if cfg.SNI != "" {
+			query.Set("sni", cfg.SNI)
+		}
+		if cfg.ObfsType != "" {
+			query.Set("obfs", cfg.ObfsType)
+			query.Set("obfs-password", cfg.ObfsPassword)
+		}
+		u := &url.URL{Scheme: "hysteria2", User: url.User(user.Password), Host: net.JoinHostPort(host, strconv.Itoa(cfg.Port)), Path: "/", RawQuery: query.Encode(), Fragment: "HopLink-" + user.Name}
 		links[user.Name] = u.String()
 	}
 	return links, nil

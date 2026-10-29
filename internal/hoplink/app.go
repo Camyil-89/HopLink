@@ -18,8 +18,9 @@ func Run() {
 	capabilities := flag.Bool("capabilities", false, "вывести возможности бинарника и выйти")
 	forward := flag.String("f", "", "адрес следующего UDP узла для udp-relay")
 	relayIdleTimeout := flag.Duration("relay-idle-timeout", defaultRelayIdleTimeout, "время простоя UDP-сессии реле")
+	relayObfs := flag.String("relay-obfs", "", "маскировка на клиентском участке: salamander или gecko")
 	listen := flag.String("hy2-listen", ":22033", "адрес UDP прослушивания Hysteria2")
-	sni := flag.String("hy2-sni", defaultHy2SNI, "SNI Hysteria2")
+	sni := flag.String("hy2-sni", "", "необязательный SNI Hysteria2")
 	key := flag.String("key", "", "общий ключ узлов цепочки")
 	keyFile := flag.String("key-file", "", "файл общего ключа узлов")
 	cert := flag.String("hy2-cert", "", "TLS сертификат PEM")
@@ -27,6 +28,8 @@ func Run() {
 	certDir := flag.String("hy2-cert-dir", ".HopLink", "каталог постоянного автоматически созданного TLS сертификата")
 	publicHost := flag.String("hy2-public-host", "", "публичный адрес входного узла для ссылки Hiddify")
 	usersFile := flag.String("hy2-users-file", "", "файл клиентов: по одной строке <имя> <пароль>")
+	hy2Obfs := flag.String("hy2-obfs", "", "маскировка Hysteria2: salamander или gecko")
+	hy2ObfsKeyFile := flag.String("hy2-obfs-key-file", "", "файл пароля UDP-маскировки")
 	logLevel := flag.String("log-level", "info", "уровень журнала: trace, debug, info, warn, error")
 	flag.Parse()
 	if *capabilities {
@@ -41,7 +44,7 @@ func Run() {
 		if *forward == "" {
 			log.Fatal("для udp-relay укажите -f host:port следующего узла")
 		}
-		relay, err := newUDPRelay(*listen, parseHy2Forward(*forward), *relayIdleTimeout)
+		relay, err := newUDPRelayWithObfs(*listen, parseHy2Forward(*forward), *relayIdleTimeout, *relayObfs)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -67,7 +70,7 @@ func Run() {
 		log.Fatalf("неподдерживаемый режим %q; доступны udp-relay и hy2-forward", *mode)
 	}
 	logInfof("HopLink: запуск Hysteria2 mode=%s", *mode)
-	if err := runHy2(*listen, *key, *sni, *cert, *certKey, *certDir, *publicHost, *usersFile); err != nil {
+	if err := runHy2(*listen, *key, *sni, *cert, *certKey, *certDir, *publicHost, *usersFile, *hy2Obfs, *hy2ObfsKeyFile); err != nil {
 		log.Fatalf("Hysteria2: %v", err)
 	}
 }

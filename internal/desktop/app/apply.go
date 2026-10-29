@@ -296,6 +296,11 @@ func (a *App) apply(ctx context.Context) error {
 			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/hy2-server.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.CertificateKey)))); e != nil {
 				return e
 			}
+			if cfg.ObfsType != "" {
+				if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/obfs.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.ObfsPassword)))); e != nil {
+					return e
+				}
+			}
 		}
 		if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/"+unitName), []byte(base64.StdEncoding.EncodeToString([]byte(unit)))); e != nil {
 			return e
@@ -303,9 +308,14 @@ func (a *App) apply(ctx context.Context) error {
 		install := "set -eu; systemctl stop " + unitName + " 2>/dev/null || true; install -d -m 700 " + remote.ShellQuote(installDir) + "; install -m 755 " + remote.ShellQuote(stage+"/HopLink") + " " + remote.ShellQuote(installDir+"/HopLink") + "; install -m 644 " + remote.ShellQuote(stage+"/"+unitName) + " /etc/systemd/system/" + unitName + "; "
 		if i == len(order)-1 {
 			install += "install -m 600 " + remote.ShellQuote(stage+"/shared.key") + " " + remote.ShellQuote(installDir+"/shared.key") + "; install -m 600 " + remote.ShellQuote(stage+"/users.txt") + " " + remote.ShellQuote(installDir+"/users.txt") + "; install -m 644 " + remote.ShellQuote(stage+"/hy2-server.crt") + " " + remote.ShellQuote(installDir+"/hy2-server.crt") + "; install -m 600 " + remote.ShellQuote(stage+"/hy2-server.key") + " " + remote.ShellQuote(installDir+"/hy2-server.key") + "; "
+			if cfg.ObfsType != "" {
+				install += "install -m 600 " + remote.ShellQuote(stage+"/obfs.key") + " " + remote.ShellQuote(installDir+"/obfs.key") + "; "
+			} else {
+				install += "rm -f -- " + remote.ShellQuote(installDir+"/obfs.key") + "; "
+			}
 		} else {
 			// Remove obsolete credentials from nodes that used to terminate TLS.
-			for _, name := range []string{"shared.key", "users.txt", "hy2-server.crt", "hy2-server.key"} {
+			for _, name := range []string{"shared.key", "users.txt", "hy2-server.crt", "hy2-server.key", "obfs.key"} {
 				install += "rm -f -- " + remote.ShellQuote(installDir+"/"+name) + "; "
 			}
 		}

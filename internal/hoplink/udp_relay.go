@@ -25,6 +25,7 @@ type udpRelay struct {
 	conn        *net.UDPConn
 	target      *net.UDPAddr
 	idleTimeout time.Duration
+	obfsMode    string
 	mu          sync.Mutex
 	sessions    map[netip.AddrPort]*udpRelaySession
 	closed      bool
@@ -45,6 +46,10 @@ type udpRelaySession struct {
 }
 
 func newUDPRelay(listen, forward string, idleTimeout time.Duration) (*udpRelay, error) {
+	return newUDPRelayWithObfs(listen, forward, idleTimeout, "")
+}
+
+func newUDPRelayWithObfs(listen, forward string, idleTimeout time.Duration, obfsMode string) (*udpRelay, error) {
 	if idleTimeout < time.Second {
 		return nil, fmt.Errorf("relay requires idle timeout >= 1s")
 	}
@@ -55,6 +60,9 @@ func newUDPRelay(listen, forward string, idleTimeout time.Duration) (*udpRelay, 
 	if target.Port == 0 || target.IP.IsUnspecified() {
 		return nil, fmt.Errorf("relay target must have a concrete address and nonzero port")
 	}
+	if obfsMode != "" && obfsMode != "salamander" && obfsMode != "gecko" {
+		return nil, fmt.Errorf("unsupported relay obfuscation %q", obfsMode)
+	}
 	addr, err := net.ResolveUDPAddr("udp", listen)
 	if err != nil {
 		return nil, err
@@ -63,7 +71,7 @@ func newUDPRelay(listen, forward string, idleTimeout time.Duration) (*udpRelay, 
 	if err != nil {
 		return nil, err
 	}
-	return &udpRelay{conn: conn, target: target, idleTimeout: idleTimeout, sessions: make(map[netip.AddrPort]*udpRelaySession)}, nil
+	return &udpRelay{conn: conn, target: target, idleTimeout: idleTimeout, obfsMode: obfsMode, sessions: make(map[netip.AddrPort]*udpRelaySession)}, nil
 }
 
 func (r *udpRelay) Serve(ctx context.Context) error {
@@ -86,6 +94,7 @@ func (r *udpRelay) Serve(ctx context.Context) error {
 			}
 			return err
 		}
+		logTracef("[UDP_RELAY_RX] peer=%s packet_bytes=%d obfs=%s", peer, n, r.obfsMode)
 		s := r.session(peer, buf[:n])
 		if s == nil {
 			continue
@@ -136,13 +145,16 @@ func (r *udpRelay) session(peer netip.AddrPort, packet []byte) *udpRelaySession 
 	if s := r.sessions[peer]; s != nil {
 		return s
 	}
-	if !isQUICInitial(packet) {
+	if !isRelayInitial(packet, r.obfsMode) {
+		logTracef("[UDP_RELAY_DROP] peer=%s packet_bytes=%d reason=not_initial_or_too_short obfs=%s", peer, len(packet), r.obfsMode)
 		return nil
 	}
 	conn, err := net.DialUDP("udp", nil, r.target)
 	if err != nil {
+		logWarnf("[UDP_RELAY_DIAL_ERROR] peer=%s target=%s err=%v", peer, r.target, err)
 		return nil // Only this source fails; keep every established session.
 	}
+	logInfof("[UDP_RELAY_SESSION_START] peer=%s target=%s obfs=%s", peer, r.target, r.obfsMode)
 	s := &udpRelaySession{relay: r, peer: peer, conn: conn, queue: make(chan []byte, relayQueueSize), done: make(chan struct{})}
 	s.lastSeen.Store(time.Now().UnixNano())
 	r.sessions[peer] = s
@@ -150,6 +162,17 @@ func (r *udpRelay) session(peer netip.AddrPort, packet []byte) *udpRelaySession 
 	go s.send()
 	go s.receive()
 	return s
+}
+
+func isRelayInitial(packet []byte, obfsMode string) bool {
+	switch obfsMode {
+	case "salamander":
+		return len(packet) >= 1200+salamanderSaltSize
+	case "gecko":
+		return len(packet) >= geckoMinPacketSize
+	default:
+		return isQUICInitial(packet)
+	}
 }
 
 func (s *udpRelaySession) close() {
@@ -189,6 +212,7 @@ func (s *udpRelaySession) send() {
 			s.relay.queuedBytes.Add(-int64(len(packet)))
 			if err != nil {
 				// UDP ICMP errors and a blocked socket affect only this source.
+				logWarnf("[UDP_RELAY_SEND_ERROR] peer=%s target=%s err=%v", s.peer, s.relay.target, err)
 				return
 			}
 			s.lastSeen.Store(time.Now().UnixNano())
@@ -208,8 +232,10 @@ func (s *udpRelaySession) receive() {
 			if errors.As(err, &timeout) && timeout.Timeout() && time.Since(time.Unix(0, s.lastSeen.Load())) < s.relay.idleTimeout {
 				continue
 			}
+			logDebugf("[UDP_RELAY_UPSTREAM_CLOSED] peer=%s target=%s err=%v", s.peer, s.relay.target, err)
 			return
 		}
+		logTracef("[UDP_RELAY_TX] peer=%s target=%s packet_bytes=%d", s.peer, s.relay.target, n)
 		s.lastSeen.Store(time.Now().UnixNano())
 		if _, err := s.relay.conn.WriteToUDPAddrPort(buf[:n], s.peer); err != nil {
 			return

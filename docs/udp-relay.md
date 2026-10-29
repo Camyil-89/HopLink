@@ -22,11 +22,25 @@ QUIC/TLS соединяет клиент непосредственно с вы�
 HopLink -mode udp-relay -hy2-listen :22033 -f NEXT_NODE:22033 -log-level warn
 ```
 
+Если на выходе включена UDP-маскировка, задайте на реле тот же тип для начальной фильтрации пакетов (само реле их не расшифровывает):
+
+```sh
+HopLink -mode udp-relay -hy2-listen :22033 -f NEXT_NODE:22033 -relay-obfs salamander -log-level warn
+```
+
 Выход:
 
 ```sh
 HopLink -mode hy2-forward -hy2-listen :22033 -key-file /opt/route/shared.key -hy2-users-file /opt/route/users.txt -hy2-sni example.com -hy2-cert /opt/route/hy2-server.crt -hy2-cert-key /opt/route/hy2-server.key -log-level warn
 ```
+
+На выходном узле можно включить Salamander или экспериментальный Gecko; клиенту в Hysteria2 URI передаются `obfs` и `obfs-password`:
+
+```sh
+HopLink -mode hy2-forward -hy2-listen :22033 -key-file /opt/route/shared.key -hy2-users-file /opt/route/users.txt -hy2-sni example.com -hy2-cert /opt/route/hy2-server.crt -hy2-cert-key /opt/route/hy2-server.key -hy2-obfs salamander -hy2-obfs-key-file /opt/route/obfs.key
+```
+
+Пароль маскировки должен совпадать у клиента и выхода. Salamander меняет UDP-пакеты, а Gecko дополнительно дробит QUIC-пакеты рукопожатия; оба режима продолжают использовать UDP и не гарантируют прохождение сетей, блокирующих UDP целиком.
 
 `hy2-enter` оставлен как alias `udp-relay`; прежние флаги для TLS следующего узла (`hy2-upstream-sni`, `hy2-ca`, `hy2-insecure`) удалены. Для ручного вывода ссылок на выходе можно передать `-hy2-public-host ENTRY_HOST`; порт ссылки берётся из `-hy2-listen`. Desktop этот вывод не включает, чтобы ссылки не попадали в journald.
 

@@ -22,6 +22,10 @@ export function CreateRoute(arg1) {
   return window['go']['desktop']['App']['CreateRoute'](arg1);
 }
 
+export function DeleteRoute(arg1) {
+  return window['go']['desktop']['App']['DeleteRoute'](arg1);
+}
+
 export function DeleteServer(arg1) {
   return window['go']['desktop']['App']['DeleteServer'](arg1);
 }
@@ -62,8 +66,8 @@ export function SaveMap(arg1, arg2) {
   return window['go']['desktop']['App']['SaveMap'](arg1, arg2);
 }
 
-export function SaveRouteDraft(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
-  return window['go']['desktop']['App']['SaveRouteDraft'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+export function SaveRouteDraft(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11) {
+  return window['go']['desktop']['App']['SaveRouteDraft'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
 }
 
 export function SaveSecrets(arg1, arg2, arg3) {

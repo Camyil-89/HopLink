@@ -27,7 +27,7 @@ type remoteLayout struct {
 }
 
 func defaultConfig() AppConfig {
-	return AppConfig{InstallSource: "github", Servers: []Server{}, MapServers: []Server{}, DeployedServers: []Server{}, Users: []User{}, Edges: []Edge{}, Routes: []Route{}, SNI: "www.cloudflare.com", Port: defaultPort, KnownHosts: map[string]string{}}
+	return AppConfig{InstallSource: "github", Servers: []Server{}, MapServers: []Server{}, DeployedServers: []Server{}, Users: []User{}, Edges: []Edge{}, Routes: []Route{}, SNI: "", Port: defaultPort, KnownHosts: map[string]string{}}
 }
 
 func deriveVaultKey(password string, salt []byte) []byte {
@@ -137,20 +137,19 @@ func (a *App) prepareRoutesLocked() error {
 	if a.config.Port == 0 {
 		a.config.Port = defaultPort
 	}
-	if a.config.SNI == "" {
-		a.config.SNI = "www.cloudflare.com"
-	}
 	for i := range a.config.Users {
 		if a.config.Users[i].Active == nil {
 			a.config.Users[i].Active = boolPointer(true)
 		}
 	}
-	if len(a.config.Routes) == 0 {
+	hasLegacyRouteData := len(a.config.MapServers) > 0 || len(a.config.DeployedServers) > 0 || len(a.config.Users) > 0 || len(a.config.Edges) > 0 || a.config.ChainKey != "" || a.config.Certificate != "" || a.config.CertificateKey != ""
+	if len(a.config.Routes) == 0 && hasLegacyRouteData {
 		a.config.Routes = []Route{{
 			ID: newID(), Name: "Маршрут 1", Index: 1, LegacyLayout: true, MapServers: append([]Server{}, a.config.MapServers...),
 			DeployedServers: append([]Server{}, a.config.DeployedServers...), Users: append([]User{}, a.config.Users...),
 			Edges: append([]Edge{}, a.config.Edges...), SNI: a.config.SNI, Port: a.config.Port, EntryDomain: a.config.EntryDomain,
 			ChainKey: a.config.ChainKey, Certificate: a.config.Certificate, CertificateKey: a.config.CertificateKey,
+			ObfsType: a.config.ObfsType, ObfsPassword: a.config.ObfsPassword,
 		}}
 		a.config.ActiveRouteID = a.config.Routes[0].ID
 	}
@@ -196,11 +195,15 @@ func (a *App) prepareRoutesLocked() error {
 		if route.Port == 0 {
 			route.Port = defaultPort
 		}
-		if route.SNI == "" {
-			route.SNI = "www.cloudflare.com"
-		}
 		if route.LogLevel == "" {
 			route.LogLevel = "warn"
+		}
+		if !validObfsType(route.ObfsType) {
+			route.ObfsType = ""
+			route.ObfsPassword = ""
+		}
+		if route.ObfsType == "" {
+			route.ObfsPassword = ""
 		}
 		if !validLogLevel(route.LogLevel) {
 			route.LogLevel = "warn"
@@ -209,8 +212,10 @@ func (a *App) prepareRoutesLocked() error {
 			found = true
 		}
 	}
-	if !found {
+	if !found && len(a.config.Routes) > 0 {
 		a.config.ActiveRouteID = a.config.Routes[0].ID
+	} else if len(a.config.Routes) == 0 {
+		a.config.ActiveRouteID = ""
 	}
 	a.loadActiveRouteLocked()
 	return nil
@@ -269,6 +274,7 @@ func (a *App) storeActiveRouteLocked() {
 		route.EntryDomain = a.config.EntryDomain
 		route.ChainKey, route.Certificate, route.CertificateKey = a.config.ChainKey, a.config.Certificate, a.config.CertificateKey
 		route.LogLevel = a.config.LogLevel
+		route.ObfsType, route.ObfsPassword = a.config.ObfsType, a.config.ObfsPassword
 		return
 	}
 }
@@ -286,6 +292,7 @@ func (a *App) loadActiveRouteLocked() {
 		a.config.EntryDomain = route.EntryDomain
 		a.config.ChainKey, a.config.Certificate, a.config.CertificateKey = route.ChainKey, route.Certificate, route.CertificateKey
 		a.config.LogLevel = route.LogLevel
+		a.config.ObfsType, a.config.ObfsPassword = route.ObfsType, route.ObfsPassword
 		a.links = linksForUsers(a.config.Users)
 		return
 	}
@@ -313,6 +320,76 @@ func (a *App) SelectRoute(id string) (AppConfig, error) {
 	return a.config, nil
 }
 
+// DeleteRoute removes the route's installation, then irreversibly deletes its
+// saved map, settings, users, and connection links. Other routes are untouched.
+func (a *App) DeleteRoute(id string) (AppConfig, error) {
+	a.mu.Lock()
+	if a.vaultLocked || len(a.vaultKey) == 0 {
+		a.mu.Unlock()
+		return a.GetState(), fmt.Errorf("разблокируйте настройки перед удалением маршрута")
+	}
+	a.storeActiveRouteLocked()
+	var target Route
+	found := false
+	for _, route := range a.config.Routes {
+		if route.ID == id {
+			target, found = route, true
+			break
+		}
+	}
+	a.mu.Unlock()
+	if !found {
+		return a.GetState(), fmt.Errorf("маршрут не найден")
+	}
+	if len(target.DeployedServers) > 0 {
+		if _, err := a.RemoveRouteService(id); err != nil {
+			return a.GetState(), fmt.Errorf("не удалось удалить установленный сервис маршрута: %w", err)
+		}
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.storeActiveRouteLocked()
+	index := -1
+	for i := range a.config.Routes {
+		if a.config.Routes[i].ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return a.config, fmt.Errorf("маршрут уже удалён")
+	}
+	wasActive := a.config.ActiveRouteID == id
+	a.config.Routes = append(a.config.Routes[:index], a.config.Routes[index+1:]...)
+	if wasActive {
+		if len(a.config.Routes) > 0 {
+			a.config.ActiveRouteID = a.config.Routes[0].ID
+			a.loadActiveRouteLocked()
+		} else {
+			a.config.ActiveRouteID = ""
+			a.config.MapServers = []Server{}
+			a.config.DeployedServers = []Server{}
+			a.config.Users = []User{}
+			a.config.Edges = []Edge{}
+			a.config.EntryDomain = ""
+			a.config.SNI = ""
+			a.config.Port = defaultPort
+			a.config.ChainKey = ""
+			a.config.Certificate = ""
+			a.config.CertificateKey = ""
+			a.config.LogLevel = "warn"
+			a.config.ObfsType = ""
+			a.config.ObfsPassword = ""
+			a.links = map[string]string{}
+		}
+	}
+	if err := a.saveLocked(); err != nil {
+		return a.config, err
+	}
+	return a.config, nil
+}
+
 func (a *App) CreateRoute(name string) (AppConfig, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -327,7 +404,7 @@ func (a *App) CreateRoute(name string) (AppConfig, error) {
 			nextIndex = existing.Index + 1
 		}
 	}
-	route := Route{ID: newID(), Name: name, Index: nextIndex, MapServers: []Server{}, DeployedServers: []Server{}, Users: []User{}, Edges: []Edge{}, SNI: a.config.SNI, Port: a.config.Port, LogLevel: "warn"}
+	route := Route{ID: newID(), Name: name, Index: nextIndex, MapServers: []Server{}, DeployedServers: []Server{}, Users: []User{}, Edges: []Edge{}, SNI: a.config.SNI, Port: a.config.Port, LogLevel: "warn", ObfsType: a.config.ObfsType, ObfsPassword: a.config.ObfsPassword}
 	a.config.Routes = append(a.config.Routes, route)
 	a.config.ActiveRouteID = route.ID
 	a.loadActiveRouteLocked()

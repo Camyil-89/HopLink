@@ -29,15 +29,13 @@ import (
 	hyserver "github.com/apernet/hysteria/core/v2/server"
 )
 
-const defaultHy2SNI = "www.cloudflare.com"
-
 type hy2User struct{ name, password string }
 type hy2PasswordAuth struct {
 	password string
 	users    []hy2User
 }
 
-func (a hy2PasswordAuth) Authenticate(_ net.Addr, auth string, _ uint64) (bool, string) {
+func (a hy2PasswordAuth) Authenticate(addr net.Addr, auth string, tx uint64) (bool, string) {
 	// Compare fixed-size digests so a length mismatch does not skip a candidate.
 	digest := sha256.Sum256([]byte(auth))
 	relayDigest := sha256.Sum256([]byte(a.password))
@@ -51,11 +49,14 @@ func (a hy2PasswordAuth) Authenticate(_ net.Addr, auth string, _ uint64) (bool, 
 		selected |= match
 	}
 	if selected == 0 {
+		logWarnf("[HY2_AUTH_REJECT] peer=%s reason=invalid_credential tx=%d", addr, tx)
 		return false, ""
 	}
 	if index == 0 {
+		logDebugf("[HY2_AUTH_ACCEPT] peer=%s id=relay tx=%d", addr, tx)
 		return true, "relay"
 	}
+	logDebugf("[HY2_AUTH_ACCEPT] peer=%s id=%s tx=%d", addr, a.users[index-1].name, tx)
 	return true, a.users[index-1].name
 }
 
@@ -177,7 +178,7 @@ func generateHy2Certificate(sni string) ([]byte, []byte, error) {
 	tmpl := x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: sni}, NotBefore: now.Add(-time.Minute), NotAfter: now.AddDate(5, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
 	if ip := net.ParseIP(sni); ip != nil {
 		tmpl.IPAddresses = []net.IP{ip}
-	} else {
+	} else if sni != "" {
 		tmpl.DNSNames = []string{sni}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
@@ -191,12 +192,9 @@ func generateHy2Certificate(sni string) ([]byte, []byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: priv}), nil
 }
 
-func runHy2(listen, password, sni, certPath, keyPath, certDir, publicHost, usersFile string) error {
+func runHy2(listen, password, sni, certPath, keyPath, certDir, publicHost, usersFile, obfsMode, obfsKeyFile string) error {
 	if password == "" {
 		return fmt.Errorf("укажите общий непустой -key для Hysteria2")
-	}
-	if sni == "" {
-		sni = defaultHy2SNI
 	}
 	certs, certPin, activeCertPath, err := loadHy2Certificate(certPath, keyPath, certDir, sni)
 	if err != nil {
@@ -206,6 +204,25 @@ func runHy2(listen, password, sni, certPath, keyPath, certDir, publicHost, users
 	if err != nil {
 		return fmt.Errorf("Hysteria2 users: %w", err)
 	}
+	var obfsPassword string
+	if obfsMode != "" {
+		if obfsMode != "salamander" && obfsMode != "gecko" {
+			return fmt.Errorf("неподдерживаемый тип UDP-маскировки %q", obfsMode)
+		}
+		if obfsKeyFile == "" {
+			return fmt.Errorf("для UDP-маскировки укажите -hy2-obfs-key-file")
+		}
+		data, readErr := os.ReadFile(obfsKeyFile)
+		if readErr != nil {
+			return fmt.Errorf("прочитать пароль UDP-маскировки: %w", readErr)
+		}
+		obfsPassword = string(data)
+		if len([]byte(obfsPassword)) < 4 {
+			return fmt.Errorf("пароль UDP-маскировки должен содержать не менее 4 байт")
+		}
+	} else if obfsKeyFile != "" {
+		return fmt.Errorf("-hy2-obfs-key-file требует -hy2-obfs")
+	}
 	for _, user := range users {
 		if len(user.password) == len(password) && subtle.ConstantTimeCompare([]byte(user.password), []byte(password)) == 1 {
 			return fmt.Errorf("пароль клиента %q должен отличаться от ключа межсерверной цепочки", user.name)
@@ -214,6 +231,12 @@ func runHy2(listen, password, sni, certPath, keyPath, certDir, publicHost, users
 	pc, err := net.ListenPacket("udp", listen)
 	if err != nil {
 		return fmt.Errorf("listen Hysteria2 UDP %s: %w", listen, err)
+	}
+	if obfsMode != "" {
+		pc, err = newObfsPacketConn(pc, obfsMode, obfsPassword)
+		if err != nil {
+			return fmt.Errorf("Hysteria2 UDP obfuscation: %w", err)
+		}
 	}
 	config := exitServerConfig(pc, certs, password, users)
 	srv, err := hyserver.NewServer(config)
@@ -226,7 +249,8 @@ func runHy2(listen, password, sni, certPath, keyPath, certDir, publicHost, users
 	serveErr := make(chan error, 1)
 	sort.Slice(users, func(i, j int) bool { return users[i].name < users[j].name })
 	go func() { serveErr <- srv.Serve() }()
-	logInfof("[HY2_SERVER_START] mode=hy2-forward listen=%s sni=%s end_to_end=true", listen, sni)
+	logInfof("[HY2_SERVER_START] mode=hy2-forward listen=%s sni=%s end_to_end=true obfs=%s", listen, sni, obfsMode)
+	logInfof("[HY2_DIAGNOSTICS] level=trace logs UDP packet metadata; authentication rejection logs peer and reason; credentials and packet contents are never logged")
 	if publicHost != "" {
 		_, port, splitErr := net.SplitHostPort(pc.LocalAddr().String())
 		if splitErr != nil {
@@ -271,7 +295,11 @@ func exitServerConfig(pc net.PacketConn, certs []tls.Certificate, password strin
 
 func makeHy2ShareLink(password, host, port, sni, fingerprint, name string) string {
 	host = strings.Trim(strings.TrimSpace(host), "[]")
-	u := &url.URL{Scheme: "hysteria2", User: url.User(password), Host: net.JoinHostPort(host, port), Path: "/", RawQuery: url.Values{"pinSHA256": {fingerprint}, "sni": {sni}}.Encode(), Fragment: name}
+	query := url.Values{"pinSHA256": {fingerprint}}
+	if sni != "" {
+		query.Set("sni", sni)
+	}
+	u := &url.URL{Scheme: "hysteria2", User: url.User(password), Host: net.JoinHostPort(host, port), Path: "/", RawQuery: query.Encode(), Fragment: name}
 	return u.String()
 }
 

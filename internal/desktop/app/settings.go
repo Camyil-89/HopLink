@@ -24,15 +24,16 @@ func validLogLevel(level string) bool {
 	return false
 }
 
+func validObfsType(mask string) bool {
+	return mask == "" || mask == "salamander" || mask == "gecko"
+}
+
 func (a *App) SaveSettings(sni string, port int, entryDomain string) (AppConfig, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.config.SNI = sni
+	a.config.SNI = strings.TrimSpace(sni)
 	a.config.Port = port
 	a.config.EntryDomain = strings.TrimSpace(entryDomain)
-	if a.config.SNI == "" {
-		a.config.SNI = "www.cloudflare.com"
-	}
 	if a.config.Port < 1 || a.config.Port > 65535 {
 		return a.config, fmt.Errorf("порт должен быть от 1 до 65535")
 	}
@@ -82,9 +83,6 @@ func (a *App) ensureSecrets() error {
 	}
 	if a.config.Certificate == "" {
 		sni := a.config.SNI
-		if sni == "" {
-			sni = "www.cloudflare.com"
-		}
 		key, e := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if e != nil {
 			return e
@@ -97,7 +95,7 @@ func (a *App) ensureSecrets() error {
 		tmpl := x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: sni}, NotBefore: now.Add(-time.Minute), NotAfter: now.AddDate(5, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
 		if ip := net.ParseIP(sni); ip != nil {
 			tmpl.IPAddresses = []net.IP{ip}
-		} else {
+		} else if sni != "" {
 			tmpl.DNSNames = []string{sni}
 		}
 		der, e := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)

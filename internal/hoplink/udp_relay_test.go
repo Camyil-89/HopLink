@@ -113,6 +113,21 @@ func TestUDPRelayOpaquePacketsIndependentSessionsAndIdle(t *testing.T) {
 	}
 }
 
+func TestObfuscatedRelayAdmissionUsesPacketSize(t *testing.T) {
+	if !isRelayInitial(bytes.Repeat([]byte{0x9a}, 1200+salamanderSaltSize), "salamander") {
+		t.Fatal("Salamander initial datagram was rejected")
+	}
+	if isRelayInitial(bytes.Repeat([]byte{0x9a}, 1200), "salamander") {
+		t.Fatal("undersized Salamander datagram was admitted")
+	}
+	if !isRelayInitial(bytes.Repeat([]byte{0x9a}, geckoMinPacketSize), "gecko") {
+		t.Fatal("Gecko initial fragment was rejected")
+	}
+	if isRelayInitial(bytes.Repeat([]byte{0x9a}, geckoMinPacketSize-1), "gecko") {
+		t.Fatal("undersized Gecko datagram was admitted")
+	}
+}
+
 func TestUDPRelayQUICAdmission(t *testing.T) {
 	packet := make([]byte, 1200)
 	packet[0], packet[4] = 0xc0, 1

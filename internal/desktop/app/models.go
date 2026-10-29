@@ -57,6 +57,8 @@ type AppConfig struct {
 	Certificate     string            `json:"certificate"`
 	CertificateKey  string            `json:"certificateKey"`
 	LogLevel        string            `json:"logLevel,omitempty"`
+	ObfsType        string            `json:"obfsType,omitempty"`
+	ObfsPassword    string            `json:"obfsPassword,omitempty"`
 	KnownHosts      map[string]string `json:"knownHosts"`
 }
 type Route struct {
@@ -76,6 +78,8 @@ type Route struct {
 	Certificate     string   `json:"certificate"`
 	CertificateKey  string   `json:"certificateKey"`
 	LogLevel        string   `json:"logLevel,omitempty"`
+	ObfsType        string   `json:"obfsType,omitempty"`
+	ObfsPassword    string   `json:"obfsPassword,omitempty"`
 }
 type MapState struct {
 	Servers []Server `json:"servers"`

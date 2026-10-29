@@ -32,7 +32,7 @@ func (a *App) SaveMap(servers []Server, edges []Edge) (AppConfig, error) {
 	}
 	return a.config, nil
 }
-func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey, logLevel string) (AppConfig, error) {
+func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey, logLevel, obfsType, obfsPassword string) (AppConfig, error) {
 	if err := validateMap(servers, edges); err != nil {
 		return a.GetState(), err
 	}
@@ -46,11 +46,18 @@ func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port in
 	if (cert == "") != (certKey == "") {
 		return a.GetState(), fmt.Errorf("сертификат и приватный ключ нужно задать вместе")
 	}
-	if sni == "" {
-		sni = "www.cloudflare.com"
-	}
+	sni = strings.TrimSpace(sni)
 	if !validLogLevel(logLevel) {
 		return a.GetState(), fmt.Errorf("неверный уровень логирования")
+	}
+	if !validObfsType(obfsType) {
+		return a.GetState(), fmt.Errorf("неверный тип UDP маскировки")
+	}
+	if obfsType != "" && len([]byte(obfsPassword)) < 4 {
+		return a.GetState(), fmt.Errorf("пароль UDP маскировки должен содержать не менее 4 байт")
+	}
+	if obfsType == "" {
+		obfsPassword = ""
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -70,6 +77,7 @@ func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port in
 	a.config.SNI, a.config.Port, a.config.EntryDomain = sni, port, entryDomain
 	a.config.ChainKey, a.config.Certificate, a.config.CertificateKey = chainKey, cert, certKey
 	a.config.LogLevel = logLevel
+	a.config.ObfsType, a.config.ObfsPassword = obfsType, obfsPassword
 	return a.config, a.saveLocked()
 }
 func (a *App) clearRouteMigrationLayoutsLocked(routeID string) {

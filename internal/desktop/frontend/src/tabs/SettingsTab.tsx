@@ -1,5 +1,6 @@
 import { KeyRound, Radio, ShieldCheck, X } from 'lucide-react'
 import type { AppState } from '../types/app'
+import { generatePassword } from '../utils/password'
 
 type Props = {
   state: AppState
@@ -22,7 +23,19 @@ export function SettingsTab({ state, showSecrets, onChange, onToggleSecrets, onG
             <div className="section-icon"><Radio size={16} /></div>
             <div><b>Hysteria2</b><small>Параметры входного и межсерверных подключений.</small></div>
           </div>
-          <label className="field">SNI<input value={state.sni} onChange={event => onChange({ sni: event.target.value })} /></label>
+          <label className="field">SNI<input value={state.sni} onChange={event => onChange({ sni: event.target.value })} placeholder="Оставьте пустым, чтобы не отправлять" /><small className="field-hint">Пустое значение не добавляется в ссылку и не подставляется автоматически.</small></label>
+          <label className="field">UDP-маскировка
+            <select value={state.obfsType || ''} onChange={event => onChange({ obfsType: event.target.value as AppState['obfsType'], obfsPassword: event.target.value ? state.obfsPassword : '' })}>
+              <option value="">Выключена</option><option value="salamander">Salamander</option><option value="gecko">Gecko (экспериментальная)</option>
+            </select>
+          </label>
+          {!!state.obfsType && <div className="password-row mask-password-row">
+            <label className="field">Пароль UDP-маскировки
+              <input type="password" autoComplete="new-password" value={state.obfsPassword || ''} onChange={event => onChange({ obfsPassword: event.target.value })} />
+              <small className="field-hint">Один и тот же пароль используется HopLink и клиентом. При смене режима примените маршрут заново.</small>
+            </label>
+            <button className="btn secondary generate-password" type="button" onClick={() => onChange({ obfsPassword: generatePassword(32) })}>Сгенерировать</button>
+          </div>}
           <label className="field">UDP порт<input type="number" min="1" max="65535" value={state.port} onChange={event => onChange({ port: Number(event.target.value) })} /></label>
           <label className="field">
             Домен входного узла (необязательно)

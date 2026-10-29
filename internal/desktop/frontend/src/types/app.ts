@@ -32,6 +32,8 @@ export type Route = {
   certificate: string
   certificateKey: string
   logLevel?: string
+  obfsType?: string
+  obfsPassword?: string
 }
 
 export type AppState = {
@@ -50,6 +52,8 @@ export type AppState = {
   certificate: string
   certificateKey: string
   logLevel?: string
+  obfsType?: string
+  obfsPassword?: string
   knownHosts: Record<string, string>
 }
 
@@ -67,12 +71,14 @@ export const emptyState: AppState = {
   edges: [],
   routes: [],
   activeRouteId: '',
-  sni: 'www.cloudflare.com',
+  sni: '',
   port: 22033,
   entryDomain: '',
   chainKey: '',
   certificate: '',
   certificateKey: '',
   logLevel: 'warn',
+  obfsType: '',
+  obfsPassword: '',
   knownHosts: {},
 }
