@@ -3,8 +3,24 @@ name: CI and releases
 on:
   push:
     branches: [dev, main]
+    paths:
+      - 'internal/**'
+      - 'cmd/hoplink/**'
+      - 'cmd/desktop/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'scripts/build-desktop.mjs'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'internal/**'
+      - 'cmd/hoplink/**'
+      - 'cmd/desktop/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'scripts/build-desktop.mjs'
+      - '.github/workflows/ci.yml'
 
 permissions:
   contents: read
@@ -40,8 +56,8 @@ jobs:
             fi
             hoplink=false
             desktop=false
-            if grep -Eq '^(cmd/hoplink/|internal/hoplink/|go\.(mod|sum)$|\.github/workflows/ci\.yml$)' <<< "$files"; then hoplink=true; fi
-            if grep -Eq '^(cmd/desktop/|internal/desktop/|scripts/build-desktop\.mjs$|go\.(mod|sum)$|\.github/workflows/ci\.yml$)' <<< "$files"; then desktop=true; fi
+            if grep -Eq '^(internal/hoplink/|cmd/hoplink/|go\.(mod|sum)$|\.github/workflows/ci\.yml$)' <<< "$files"; then hoplink=true; fi
+            if grep -Eq '^(internal/desktop/|cmd/desktop/|scripts/build-desktop\.mjs$|go\.(mod|sum)$|\.github/workflows/ci\.yml$)' <<< "$files"; then desktop=true; fi
           else
             hoplink=false
             desktop=false
