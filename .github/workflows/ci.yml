@@ -63,8 +63,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-2022, macos-15]
-        component: [hoplink, desktop-hoplink]
+        include:
+          - os: ubuntu-22.04
+            component: hoplink
+          - os: ubuntu-22.04
+            component: desktop-hoplink
+          - os: windows-2022
+            component: desktop-hoplink
+          - os: macos-15
+            component: desktop-hoplink
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -130,7 +137,7 @@ jobs:
             $source = if ($IsWindows) { 'deploy/hoplink-Windows.exe' } elseif ($IsLinux) { 'deploy/hoplink-Linux-amd64' } else { 'deploy/hoplink-Darwin' }
             $version = $env:HOPLINK_VERSION
           } else {
-            $source = if ($IsWindows) { 'deploy/HopLink.exe' } elseif ($IsMacOS) { 'deploy/HopLink.app' } else { 'deploy/HopLink' }
+            $source = if ($IsWindows) { 'deploy/HopLink.exe' } elseif ($IsMacOS) { 'deploy/bin/hoplink-desktop.app' } else { 'deploy/HopLink' }
             $version = $env:DESKTOP_VERSION
           }
           if (-not (Test-Path -LiteralPath $source)) { throw "Expected build output missing: $source" }
