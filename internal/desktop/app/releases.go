@@ -104,10 +104,18 @@ func latestComponent(releases []githubRelease, component string) (githubRelease,
 	var selected githubRelease
 	version := ""
 	for _, item := range releases {
-		if item.Draft || item.Prerelease || !strings.HasPrefix(item.Tag, component+"-v") {
+		if item.Draft || item.Prerelease {
 			continue
 		}
-		candidate := strings.TrimPrefix(item.Tag, component+"-v")
+		prefix := component + "-v"
+		if component == "desktop-hoplink" && strings.HasPrefix(item.Tag, "hoplink-v") {
+			// Unified releases use the hoplink-v tag for both applications.
+			prefix = "hoplink-v"
+		}
+		if !strings.HasPrefix(item.Tag, prefix) {
+			continue
+		}
+		candidate := strings.TrimPrefix(item.Tag, prefix)
 		if newerVersion(candidate, version) {
 			selected, version = item, candidate
 		}
@@ -138,7 +146,7 @@ func (a *App) CheckDesktopUpdate() (DesktopUpdate, error) {
 		return result, err
 	}
 	platform := runtime.GOOS
-	asset, err := findAsset(release, fmt.Sprintf("desktop-hoplink-v%s-%s.zip", version, platform))
+	asset, err := findAsset(release, fmt.Sprintf("desktop-hoplink-%s.zip", platform))
 	if err != nil {
 		return result, err
 	}
@@ -189,7 +197,7 @@ func (a *App) downloadServerBinary(ctx context.Context, arch string) (string, er
 	if err != nil {
 		return "", err
 	}
-	asset, err := findAsset(release, fmt.Sprintf("hoplink-v%s-linux.zip", version))
+	asset, err := findAsset(release, "hoplink-linux.zip")
 	if err != nil {
 		return "", err
 	}
