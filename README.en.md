@@ -6,6 +6,12 @@ HopLink deploys a Hysteria2 proxy chain across Linux servers. The Go/Wails deskt
 
 The primary Russian guide is [README.md](README.md).
 
+## Route options
+
+HopLink supports short routes with two servers and longer routes with additional relay nodes:
+
+![Short and multi-server route diagrams](docs/images/route-options.png)
+
 ## Features
 
 - Drag servers from the library onto the map and connect them into a linear chain.
