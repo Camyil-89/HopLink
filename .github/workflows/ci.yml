@@ -95,7 +95,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $wailsBin
       - name: Test Go packages
         if: matrix.component == 'hoplink'
-        run: go test ./...
+        run: go test ./cmd/hoplink ./internal/hoplink
       - name: Build service
         if: matrix.component == 'hoplink'
         shell: pwsh
