@@ -4,7 +4,7 @@ type Props = { name: string; onNameChange: (name: string) => void; onClose: () =
 
 export function RouteModal({ name, onNameChange, onClose, onCreate }: Props) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <form className="modal compact" onSubmit={event => { event.preventDefault(); onCreate() }} onClick={event => event.stopPropagation()}>
         <div className="modal-head">
           <div><h2>Новый маршрут</h2><p>У маршрута будут отдельные карта, параметры и сертификаты.</p></div>

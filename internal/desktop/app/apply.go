@@ -85,9 +85,9 @@ func (a *App) apply(ctx context.Context) error {
 			}
 		}
 	}
-	if len(order) < 2 {
+	if len(order) == 0 {
 		for _, old := range cfg.DeployedServers {
-			a.log("Удаляю HopLink: на карте осталось меньше двух серверов")
+			a.log("Удаляю HopLink: на карте не осталось серверов")
 			if removeErr := a.removeOneAtContext(ctx, old, cfg.Port, installDir, unitName); removeErr != nil {
 				return removeErr
 			}
@@ -104,7 +104,7 @@ func (a *App) apply(ctx context.Context) error {
 		if e != nil {
 			return e
 		}
-		return fmt.Errorf("на карте должно быть минимум два сервера. Установленная цепочка удалена")
+		return fmt.Errorf("на карте нет серверов. Установленная цепочка удалена")
 	}
 	activeUsers := make([]User, 0, len(users))
 	for _, user := range users {

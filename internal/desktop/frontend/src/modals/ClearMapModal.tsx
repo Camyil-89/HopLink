@@ -7,7 +7,7 @@ type Props = {
 
 export function ClearMapModal({ serverCount, connectionCount, onCancel, onConfirm }: Props) {
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal-backdrop">
       <div className="modal compact" role="dialog" aria-modal="true" aria-labelledby="clear-map-title" onClick={event => event.stopPropagation()}>
         <div className="modal-head">
           <div><h2 id="clear-map-title">Очистить карту маршрута?</h2><p>Будут убраны {serverCount} серверов и {connectionCount} связей.</p></div>

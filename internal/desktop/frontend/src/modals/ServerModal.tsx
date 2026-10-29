@@ -6,7 +6,7 @@ type Props = { draft: ServerDraft; editing: boolean; onChange: (draft: ServerDra
 export function ServerModal({ draft, editing, onChange, onClose, onSave }: Props) {
   const update = (patch: Partial<ServerDraft>) => onChange({ ...draft, ...patch })
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal" onClick={event => event.stopPropagation()}>
         <div className="modal-head"><div><h2>{editing ? 'Изменить сервер' : 'Добавить сервер'}</h2><p>SSH доступ к Linux-серверу</p></div><button className="icon-btn" onClick={onClose}><X size={17} /></button></div>
         <div className="modal-fields">

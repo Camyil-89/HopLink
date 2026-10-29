@@ -32,7 +32,7 @@ export function ServerNode({ data, selected }: NodeProps) {
         </small>}
       </span>
       <span className={`node-role ${role}`}>
-        {role === 'entry' ? 'ВХОДНАЯ ТОЧКА' : role === 'exit' ? 'ВЫХОДНАЯ ТОЧКА' : 'УЗЕЛ ЦЕПОЧКИ'}
+        {!hasIn && !hasOut ? 'ВХОД / ВЫХОД' : role === 'entry' ? 'ВХОДНАЯ ТОЧКА' : role === 'exit' ? 'ВЫХОДНАЯ ТОЧКА' : 'УЗЕЛ ЦЕПОЧКИ'}
       </span>
       <Handle type="source" position={Position.Right} isConnectable={!hasOut} />
     </div>
