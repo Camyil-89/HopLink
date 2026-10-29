@@ -42,8 +42,8 @@ export function GetVaultStatus() {
   return window['go']['desktop']['App']['GetVaultStatus']();
 }
 
-export function OpenDesktopUpdate() {
-  return window['go']['desktop']['App']['OpenDesktopUpdate']();
+export function InstallDesktopUpdate() {
+  return window['go']['desktop']['App']['InstallDesktopUpdate']();
 }
 
 export function RemoveHoplink(arg1) {

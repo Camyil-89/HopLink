@@ -1,17 +1,16 @@
 package main
 
 import (
-	"flag"
 	"fmt"
+	"os"
+
 	"hoplink/internal/hoplink"
 )
 
 var version = "dev"
 
 func main() {
-	showVersion := flag.Bool("version", false, "print version")
-	flag.Parse()
-	if *showVersion {
+	if len(os.Args) == 2 && os.Args[1] == "-version" {
 		fmt.Println("hoplink", version)
 		return
 	}

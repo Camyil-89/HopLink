@@ -1,67 +1,71 @@
 package desktop
 
-import "hoplink/internal/desktop/topology"
+import (
+	"hoplink/internal/desktop/app/route"
+)
 
 func (a *App) isEntryServerLocked(id string) bool {
-	return routeIsEntry(Route{MapServers: a.config.MapServers, DeployedServers: a.config.DeployedServers, Edges: a.config.Edges}, id)
+	return routeIsEntry(a.config, id)
 }
 
-func routeIsEntry(route Route, id string) bool {
-	for i, server := range route.DeployedServers {
-		if server.ID == id {
-			return i == 0
-		}
-	}
-	incoming, outgoing := false, false
-	for _, edge := range route.Edges {
-		if edge.Target == id {
-			incoming = true
-		}
-		if edge.Source == id {
-			outgoing = true
-		}
-	}
-	if !incoming && outgoing {
-		return true
-	}
-	for _, server := range route.MapServers {
-		if server.ID == id && server.Role == "entry" {
-			return true
-		}
-	}
-	return false
+func routeIsEntry(cfg AppConfig, id string) bool {
+	return route.IsEntry(routeView(cfg), id)
 }
 
-func topologyInput(servers []Server, edges []Edge) ([]topology.Node, []topology.Edge) {
-	nodes := make([]topology.Node, 0, len(servers))
-	connections := make([]topology.Edge, 0, len(edges))
-	for _, server := range servers {
-		nodes = append(nodes, topology.Node{ID: server.ID, Name: server.Name, Role: server.Role})
+func routeIsEntryRoute(r Route, id string) bool {
+	return route.IsEntry(routeViewFromRoute(r), id)
+}
+
+func routeView(cfg AppConfig) route.View {
+	return route.View{
+		MapServers:      mapRouteServers(cfg.MapServers),
+		DeployedServers: mapRouteServers(cfg.DeployedServers),
+		Edges:           mapRouteEdges(cfg.Edges),
 	}
-	for _, edge := range edges {
-		connections = append(connections, topology.Edge{Source: edge.Source, Target: edge.Target})
+}
+
+func routeViewFromRoute(r Route) route.View {
+	return route.View{
+		MapServers:      mapRouteServers(r.MapServers),
+		DeployedServers: mapRouteServers(r.DeployedServers),
+		Edges:           mapRouteEdges(r.Edges),
 	}
-	return nodes, connections
+}
+
+func mapRouteServers(servers []Server) []route.Server {
+	out := make([]route.Server, len(servers))
+	for i, server := range servers {
+		out[i] = route.Server{ID: server.ID, Name: server.Name, Role: server.Role}
+	}
+	return out
+}
+
+func mapRouteEdges(edges []Edge) []route.Edge {
+	out := make([]route.Edge, len(edges))
+	for i, edge := range edges {
+		out[i] = route.Edge{Source: edge.Source, Target: edge.Target}
+	}
+	return out
 }
 
 func validateMap(servers []Server, edges []Edge) error {
-	nodes, connections := topologyInput(servers, edges)
-	return topology.Validate(nodes, connections)
+	return route.ValidateMap(mapRouteServers(servers), mapRouteEdges(edges))
 }
 
 func orderedChain(servers []Server, edges []Edge) ([]Server, error) {
-	nodes, connections := topologyInput(servers, edges)
-	ids, err := topology.Ordered(nodes, connections)
+	ordered, err := route.OrderedChain(mapRouteServers(servers), mapRouteEdges(edges))
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]Server, len(servers))
-	for _, server := range servers {
-		byID[server.ID] = server
+	out := make([]Server, len(ordered))
+	for i, server := range ordered {
+		out[i] = Server{ID: server.ID, Name: server.Name, Role: server.Role}
+		for _, original := range servers {
+			if original.ID == server.ID {
+				out[i] = original
+				break
+			}
+		}
 	}
-	ordered := make([]Server, 0, len(ids))
-	for _, id := range ids {
-		ordered = append(ordered, byID[id])
-	}
-	return ordered, nil
+	return out, nil
 }

@@ -22,7 +22,7 @@ export function GetState():Promise<desktop.AppConfig>;
 
 export function GetVaultStatus():Promise<desktop.VaultStatus>;
 
-export function OpenDesktopUpdate():Promise<void>;
+export function InstallDesktopUpdate():Promise<void>;
 
 export function RemoveHoplink(arg1:Array<string>):Promise<desktop.AppConfig>;
 
