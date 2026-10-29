@@ -259,7 +259,7 @@ func (a *App) apply(ctx context.Context) error {
 		if i == len(order)-1 {
 			role = "hy2-forward"
 		}
-		args := []string{installDir + "/HopLink", "-mode", role, "-hy2-listen", ":" + fmt.Sprint(cfg.Port), "-key-file", installDir + "/shared.key", "-log-level", "info"}
+		args := []string{installDir + "/HopLink", "-mode", role, "-hy2-listen", ":" + fmt.Sprint(cfg.Port), "-key-file", installDir + "/shared.key", "-log-level", "warn"}
 		if i < len(order)-1 {
 			args = append(args, "-f", net.JoinHostPort(order[i+1].Host, fmt.Sprint(cfg.Port)))
 		}

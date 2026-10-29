@@ -42,15 +42,25 @@ type hy2PasswordAuth struct {
 }
 
 func (a hy2PasswordAuth) Authenticate(_ net.Addr, auth string, _ uint64) (bool, string) {
-	if len(auth) == len(a.password) && subtle.ConstantTimeCompare([]byte(auth), []byte(a.password)) == 1 {
+	// Compare fixed-size digests so a length mismatch does not skip a candidate.
+	digest := sha256.Sum256([]byte(auth))
+	relayDigest := sha256.Sum256([]byte(a.password))
+	selected := subtle.ConstantTimeCompare(digest[:], relayDigest[:])
+	index := 0
+	for i, user := range a.users {
+		userDigest := sha256.Sum256([]byte(user.password))
+		match := subtle.ConstantTimeCompare(digest[:], userDigest[:])
+		selectUser := match & (1 - selected)
+		index = subtle.ConstantTimeSelect(selectUser, i+1, index)
+		selected |= match
+	}
+	if selected == 0 {
+		return false, ""
+	}
+	if index == 0 {
 		return true, "relay"
 	}
-	for _, user := range a.users {
-		if len(auth) == len(user.password) && subtle.ConstantTimeCompare([]byte(auth), []byte(user.password)) == 1 {
-			return true, user.name
-		}
-	}
-	return false, ""
+	return true, a.users[index-1].name
 }
 
 func loadHy2Users(path string) ([]hy2User, error) {
