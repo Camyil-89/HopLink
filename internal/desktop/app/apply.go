@@ -9,11 +9,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"hoplink/internal/desktop/app/remote"
 	"io"
-	"net"
 	"os"
-	"regexp"
 	"strings"
-	"time"
 )
 
 func (a *App) log(s string) { runtime.EventsEmit(a.ctx, "deploy-log", s) }
@@ -63,6 +60,7 @@ func (a *App) apply(ctx context.Context) error {
 	if e := validateMap(servers, edges); e != nil {
 		return e
 	}
+	a.log(fmt.Sprintf("Проверяю карту маршрута: серверов %d, соединений %d.", len(servers), len(edges)))
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -70,6 +68,11 @@ func (a *App) apply(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
+	chainHosts := make([]string, len(order))
+	for i, server := range order {
+		chainHosts[i] = server.Host
+	}
+	a.log("Порядок цепочки: " + strings.Join(chainHosts, " → "))
 	for _, other := range cfg.Routes {
 		if other.ID == cfg.ActiveRouteID || other.Port != cfg.Port || len(other.DeployedServers) == 0 {
 			continue
@@ -109,7 +112,7 @@ func (a *App) apply(ctx context.Context) error {
 			activeUsers = append(activeUsers, user)
 		}
 	}
-	startedAt := time.Now().Unix()
+	a.log(fmt.Sprintf("Активных пользователей: %d; порт маршрута: %d/UDP.", len(activeUsers), cfg.Port))
 	if cfg.ChainKey == "" || cfg.Certificate == "" {
 		if e = a.ensureSecrets(); e != nil {
 			return e
@@ -117,6 +120,10 @@ func (a *App) apply(ctx context.Context) error {
 		a.mu.Lock()
 		cfg = a.config
 		a.mu.Unlock()
+	}
+	links, e := routeUserLinks(cfg, order[0], activeUsers)
+	if e != nil {
+		return e
 	}
 	a.log("Проверяю SSH-доступ ко всем серверам…")
 	clients := make([]*ssh.Client, len(order))
@@ -136,6 +143,7 @@ func (a *App) apply(ctx context.Context) error {
 		if e != nil {
 			return e
 		}
+		a.log(fmt.Sprintf("SSH подключён: %s; определяю пользователя и архитектуру…", s.Host))
 		clients[i] = c
 		identity, e := runRemoteContext(ctx, c, "id -un && uname -m", nil)
 		if e != nil {
@@ -155,6 +163,7 @@ func (a *App) apply(ctx context.Context) error {
 			return fmt.Errorf("%s: unsupported architecture %s", s.Host, machine)
 		}
 		if remoteUser != "root" {
+			a.log(fmt.Sprintf("Проверяю права установки на %s (пользователь %s)…", s.Host, remoteUser))
 			if _, sudoErr := runRemoteContext(ctx, c, "sudo -n true", nil); sudoErr != nil {
 				if _, e = runServerContext(ctx, c, s, "true", nil); e != nil {
 					return fmt.Errorf("%s: sudo preflight failed: %w", s.Host, e)
@@ -164,7 +173,7 @@ func (a *App) apply(ctx context.Context) error {
 		if _, e = runRemoteContext(ctx, c, "command -v systemctl >/dev/null && command -v base64 >/dev/null", nil); e != nil {
 			return fmt.Errorf("%s: systemctl/base64 preflight failed: %w", s.Host, e)
 		}
-		a.log(fmt.Sprintf("SSH ready: %s (%s, %s)", s.Host, remoteUser, archs[i]))
+		a.log(fmt.Sprintf("Сервер готов: %s; пользователь %s, Linux/%s, systemctl и base64 доступны.", s.Host, remoteUser, archs[i]))
 	}
 	bins := map[string]string{}
 	for _, arch := range archs {
@@ -179,6 +188,7 @@ func (a *App) apply(ctx context.Context) error {
 				return e
 			}
 			bins[arch] = p
+			a.log(fmt.Sprintf("Бинарник Linux/%s подготовлен; использую его для подходящих серверов.", arch))
 		}
 	}
 	if cfg.InstallSource == "github" {
@@ -187,6 +197,28 @@ func (a *App) apply(ctx context.Context) error {
 				_ = os.Remove(path)
 			}
 		}()
+	}
+	// Verify every binary before stopping any running route service.
+	stages := make([]string, len(order))
+	for i, s := range order {
+		stage := "/tmp/hoplink-" + newID()
+		stages[i] = stage
+		a.log(fmt.Sprintf("Готовлю временный каталог и передаю бинарник на %s (%d/%d)…", s.Host, i+1, len(order)))
+		if _, e = runServerContext(ctx, clients[i], s, "mkdir -m 700 "+remote.ShellQuote(stage), nil); e != nil {
+			return e
+		}
+		binary, e := os.ReadFile(bins[archs[i]])
+		if e != nil {
+			return e
+		}
+		if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/HopLink"), []byte(base64.StdEncoding.EncodeToString(binary))); e != nil {
+			return fmt.Errorf("загрузка бинарника на %s: %w", s.Host, e)
+		}
+		capabilities, capabilityErr := runServerContext(ctx, clients[i], s, "chmod 700 "+remote.ShellQuote(stage+"/HopLink")+" && "+remote.ShellQuote(stage+"/HopLink")+" -capabilities", nil)
+		if capabilityErr != nil || strings.TrimSpace(capabilities) != "udp-relay-v1" {
+			return fmt.Errorf("%s: бинарник не поддерживает UDP-реле; выберите сборку из текущих исходников или обновлённый релиз", s.Host)
+		}
+		a.log(fmt.Sprintf("Бинарник на %s проверен: поддержка UDP-реле подтверждена.", s.Host))
 	}
 	for _, old := range cfg.DeployedServers {
 		if len(oldLayouts) == 0 {
@@ -240,42 +272,21 @@ func (a *App) apply(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		a.log("\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044e \u0444\u0430\u0439\u043b\u044b \u043d\u0430 " + s.Host + "...")
-		stage := "/tmp/hoplink-" + newID()
-		if _, e = runServerContext(ctx, clients[i], s, "mkdir -m 700 "+remote.ShellQuote(stage), nil); e != nil {
-			return e
-		}
-		binary, e := os.ReadFile(bins[archs[i]])
-		if e != nil {
-			return e
-		}
-		if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/HopLink"), []byte(base64.StdEncoding.EncodeToString(binary))); e != nil {
-			return fmt.Errorf("загрузка бинарника на %s: %w", s.Host, e)
-		}
-		if _, e = runServerContext(ctx, clients[i], s, "printf %s "+remote.ShellQuote(base64.StdEncoding.EncodeToString([]byte(cfg.ChainKey+"\n")))+" | base64 -d > "+remote.ShellQuote(stage+"/shared.key"), nil); e != nil {
-			return e
-		}
-		role := "hy2-enter"
+		a.log(fmt.Sprintf("Формирую конфигурацию узла %d/%d: %s…", i+1, len(order), s.Host))
+		stage := stages[i]
 		if i == len(order)-1 {
-			role = "hy2-forward"
-		}
-		args := []string{installDir + "/HopLink", "-mode", role, "-hy2-listen", ":" + fmt.Sprint(cfg.Port), "-key-file", installDir + "/shared.key", "-log-level", "info"}
-		if i < len(order)-1 {
-			args = append(args, "-f", net.JoinHostPort(order[i+1].Host, fmt.Sprint(cfg.Port)))
-		}
-		if i == 0 {
-			publicHost := cfg.EntryDomain
-			if publicHost == "" {
-				publicHost = s.Host
+			a.log(fmt.Sprintf("Подготавливаю учётные данные и TLS-сертификат на конечном узле %s…", s.Host))
+			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/shared.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.ChainKey+"\n")))); e != nil {
+				return e
 			}
-			args = append(args, "-hy2-public-host", publicHost, "-hy2-users-file", installDir+"/users.txt", "-hy2-sni", cfg.SNI, "-hy2-cert", installDir+"/hy2-server.crt", "-hy2-cert-key", installDir+"/hy2-server.key")
 		}
+		args := routeNodeArgs(cfg, order, i, installDir)
 		q := make([]string, len(args))
 		for j, x := range args {
 			q[j] = remote.ShellQuote(x)
 		}
 		unit := "[Unit]\nDescription=HopLink Hysteria2 relay\nAfter=network-online.target\nWants=network-online.target\n[Service]\nType=simple\nUser=root\nWorkingDirectory=" + installDir + "\nExecStart=" + strings.Join(q, " ") + "\nRestart=on-failure\nRestartSec=3\nLimitNOFILE=65535\nUMask=0077\n[Install]\nWantedBy=multi-user.target\n"
-		if i == 0 {
+		if i == len(order)-1 {
 			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/users.txt"), []byte(base64.StdEncoding.EncodeToString([]byte(userLines)))); e != nil {
 				return e
 			}
@@ -285,17 +296,31 @@ func (a *App) apply(ctx context.Context) error {
 			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/hy2-server.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.CertificateKey)))); e != nil {
 				return e
 			}
+			if cfg.ObfsType != "" {
+				if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/obfs.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.ObfsPassword)))); e != nil {
+					return e
+				}
+			}
 		}
 		if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/"+unitName), []byte(base64.StdEncoding.EncodeToString([]byte(unit)))); e != nil {
 			return e
 		}
-		install := "set -eu; systemctl stop " + unitName + " 2>/dev/null || true; install -d -m 700 " + remote.ShellQuote(installDir) + "; install -m 755 " + remote.ShellQuote(stage+"/HopLink") + " " + remote.ShellQuote(installDir+"/HopLink") + "; install -m 600 " + remote.ShellQuote(stage+"/shared.key") + " " + remote.ShellQuote(installDir+"/shared.key") + "; install -m 644 " + remote.ShellQuote(stage+"/"+unitName) + " /etc/systemd/system/" + unitName + "; "
-		if i == 0 {
-			install += "install -m 600 " + remote.ShellQuote(stage+"/users.txt") + " " + remote.ShellQuote(installDir+"/users.txt") + "; install -m 644 " + remote.ShellQuote(stage+"/hy2-server.crt") + " " + remote.ShellQuote(installDir+"/hy2-server.crt") + "; install -m 600 " + remote.ShellQuote(stage+"/hy2-server.key") + " " + remote.ShellQuote(installDir+"/hy2-server.key") + "; "
+		install := "set -eu; systemctl stop " + unitName + " 2>/dev/null || true; install -d -m 700 " + remote.ShellQuote(installDir) + "; install -m 755 " + remote.ShellQuote(stage+"/HopLink") + " " + remote.ShellQuote(installDir+"/HopLink") + "; install -m 644 " + remote.ShellQuote(stage+"/"+unitName) + " /etc/systemd/system/" + unitName + "; "
+		if i == len(order)-1 {
+			install += "install -m 600 " + remote.ShellQuote(stage+"/shared.key") + " " + remote.ShellQuote(installDir+"/shared.key") + "; install -m 600 " + remote.ShellQuote(stage+"/users.txt") + " " + remote.ShellQuote(installDir+"/users.txt") + "; install -m 644 " + remote.ShellQuote(stage+"/hy2-server.crt") + " " + remote.ShellQuote(installDir+"/hy2-server.crt") + "; install -m 600 " + remote.ShellQuote(stage+"/hy2-server.key") + " " + remote.ShellQuote(installDir+"/hy2-server.key") + "; "
+			if cfg.ObfsType != "" {
+				install += "install -m 600 " + remote.ShellQuote(stage+"/obfs.key") + " " + remote.ShellQuote(installDir+"/obfs.key") + "; "
+			} else {
+				install += "rm -f -- " + remote.ShellQuote(installDir+"/obfs.key") + "; "
+			}
+		} else {
+			// Remove obsolete credentials from nodes that used to terminate TLS.
+			for _, name := range []string{"shared.key", "users.txt", "hy2-server.crt", "hy2-server.key", "obfs.key"} {
+				install += "rm -f -- " + remote.ShellQuote(installDir+"/"+name) + "; "
+			}
 		}
 		install += "rm -rf -- " + remote.ShellQuote(stage) + "; systemctl daemon-reload; systemctl enable " + unitName
-		install += fmt.Sprintf("; if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then if ! ufw status | grep -F '%d/udp' | grep -q ALLOW; then ufw allow %d/udp comment 'HopLink'; printf 'ufw\\n' > %s; fi; elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then if ! firewall-cmd --query-port=%d/udp >/dev/null 2>&1; then firewall-cmd --permanent --add-port=%d/udp; firewall-cmd --reload; printf 'firewalld\\n' > %s; fi; fi", cfg.Port, cfg.Port, remote.ShellQuote(installDir+"/.firewall-managed"), cfg.Port, cfg.Port, remote.ShellQuote(installDir+"/.firewall-managed"))
-		a.log("\u0423\u0441\u0442\u0430\u043d\u0430\u0432\u043b\u0438\u0432\u0430\u044e HopLink: " + s.Host + "...")
+		a.log(fmt.Sprintf("Устанавливаю бинарник и конфигурацию на %s; настраиваю systemd-службу %s…", s.Host, unitName))
 		if _, e = runServerContext(ctx, clients[i], s, install, nil); e != nil {
 			return fmt.Errorf("установка %s: %w", s.Host, e)
 		}
@@ -311,22 +336,9 @@ func (a *App) apply(ctx context.Context) error {
 			out, _ := runServerContext(ctx, c, s, "systemctl status "+unitName+" --no-pager -l; journalctl -u "+unitName+" -n 40 --no-pager", nil)
 			return fmt.Errorf("%s: сервис не запустился: %w\n%s", s.Host, e, out)
 		}
-		a.log("HopLink запущен: " + s.Host)
+		a.log("HopLink запущен и проверка systemd прошла успешно: " + s.Host)
 	}
-	a.log("\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u044e \u0437\u0430\u043f\u0443\u0441\u043a \u0446\u0435\u043f\u043e\u0447\u043a\u0438...")
-	journal, journalErr := runServerContext(ctx, clients[0], order[0], fmt.Sprintf("journalctl -u %s --since '@%d' -o cat --no-pager", unitName, startedAt), nil)
-	if journalErr == nil {
-		links := map[string]string{}
-		linkLine := regexp.MustCompile(`^([A-Za-z0-9_.-]+):\s+(hysteria2://\S+)\s*$`)
-		for _, line := range strings.Split(journal, "\n") {
-			if match := linkLine.FindStringSubmatch(strings.TrimSpace(line)); len(match) == 3 {
-				links[match[1]] = match[2]
-			}
-		}
-		a.mu.Lock()
-		a.links = links
-		a.mu.Unlock()
-	}
+	a.log("Проверяю состояние всех служб после запуска…")
 	active := map[string]bool{}
 	for _, s := range order {
 		active[s.ID] = true
@@ -341,10 +353,15 @@ func (a *App) apply(ctx context.Context) error {
 		}
 		a.log("HopLink удалён: " + old.Host)
 	}
+	a.log("Сохраняю состояние маршрута и обновляю ссылки пользователей…")
 	a.mu.Lock()
 	a.config.ChainKey = cfg.ChainKey
 	a.config.Certificate = cfg.Certificate
 	a.config.CertificateKey = cfg.CertificateKey
+	a.links = links
+	for i := range a.config.Users {
+		a.config.Users[i].Link = links[a.config.Users[i].Name]
+	}
 	a.config.DeployedServers = order
 	a.clearRouteMigrationLayoutsLocked(cfg.ActiveRouteID)
 	e = a.saveLocked()

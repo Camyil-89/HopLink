@@ -59,6 +59,7 @@ export function DeletableEdge(props: EdgeProps) {
     targetPosition: props.targetPosition,
   })
   const onDelete = (props.data as { onDelete?: () => void } | undefined)?.onDelete
+  const pingData = props.data as { pingMs?: number; pingError?: string; pingKnown?: boolean } | undefined
 
   return (
     <>
@@ -72,6 +73,7 @@ export function DeletableEdge(props: EdgeProps) {
         />
       </g>
       <EdgeLabelRenderer>
+        {pingData?.pingKnown && <div className={`edge-ping-label ${pingData.pingMs !== undefined ? 'measured' : 'unavailable'}`} title={pingData.pingError || 'ICMP задержка между узлами'} style={{ transform: `translate(-50%,-100%) translate(${labelX}px,${labelY - 12}px)` }}>{pingData.pingMs !== undefined ? `${pingData.pingMs.toFixed(1)} мс` : 'ICMP недоступен'}</div>}
         <button
           className="edge-delete-button nodrag nopan"
           aria-label="Удалить связь"

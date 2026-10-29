@@ -14,3 +14,5 @@ func startDetachedCommand(command *exec.Cmd) error {
 	_ = command.Process.Release()
 	return nil
 }
+
+func hideCommandWindow(_ *exec.Cmd) {}

@@ -16,6 +16,9 @@ export namespace desktop {
 	    chainKey: string;
 	    certificate: string;
 	    certificateKey: string;
+	    logLevel?: string;
+	    obfsType?: string;
+	    obfsPassword?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Route(source);
@@ -38,6 +41,9 @@ export namespace desktop {
 	        this.chainKey = source["chainKey"];
 	        this.certificate = source["certificate"];
 	        this.certificateKey = source["certificateKey"];
+	        this.logLevel = source["logLevel"];
+	        this.obfsType = source["obfsType"];
+	        this.obfsPassword = source["obfsPassword"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -141,6 +147,9 @@ export namespace desktop {
 	    chainKey: string;
 	    certificate: string;
 	    certificateKey: string;
+	    logLevel?: string;
+	    obfsType?: string;
+	    obfsPassword?: string;
 	    knownHosts: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -163,6 +172,9 @@ export namespace desktop {
 	        this.chainKey = source["chainKey"];
 	        this.certificate = source["certificate"];
 	        this.certificateKey = source["certificateKey"];
+	        this.logLevel = source["logLevel"];
+	        this.obfsType = source["obfsType"];
+	        this.obfsPassword = source["obfsPassword"];
 	        this.knownHosts = source["knownHosts"];
 	    }
 	
@@ -213,6 +225,9 @@ export namespace desktop {
 	    latestVersion?: string;
 	    versionCurrent?: boolean;
 	    error?: string;
+	    nextServerId?: string;
+	    nextLatencyMs?: number;
+	    nextPingError?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ServerServiceStatus(source);
@@ -226,6 +241,9 @@ export namespace desktop {
 	        this.latestVersion = source["latestVersion"];
 	        this.versionCurrent = source["versionCurrent"];
 	        this.error = source["error"];
+	        this.nextServerId = source["nextServerId"];
+	        this.nextLatencyMs = source["nextLatencyMs"];
+	        this.nextPingError = source["nextPingError"];
 	    }
 	}
 	export class RouteServiceStatus {
@@ -233,6 +251,8 @@ export namespace desktop {
 	    running: number;
 	    total: number;
 	    servers: ServerServiceStatus[];
+	    entryLatencyMs?: number;
+	    entryPingError?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RouteServiceStatus(source);
@@ -244,6 +264,8 @@ export namespace desktop {
 	        this.running = source["running"];
 	        this.total = source["total"];
 	        this.servers = this.convertValues(source["servers"], ServerServiceStatus);
+	        this.entryLatencyMs = source["entryLatencyMs"];
+	        this.entryPingError = source["entryPingError"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

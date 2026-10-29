@@ -1,28 +1,52 @@
 import { KeyRound, Radio, ShieldCheck, X } from 'lucide-react'
 import type { AppState } from '../types/app'
+import { generatePassword } from '../utils/password'
 
 type Props = {
   state: AppState
   showSecrets: boolean
   onChange: (patch: Partial<AppState>) => void
   onToggleSecrets: () => void
+  onGetJournal: () => void
 }
 
-export function SettingsTab({ state, showSecrets, onChange, onToggleSecrets }: Props) {
+export function SettingsTab({ state, showSecrets, onChange, onToggleSecrets, onGetJournal }: Props) {
   return (
     <section className="content-page route-settings">
       <div className="settings-grid">
+        <div className="table-card settings-card">
+          <div className="settings-section"><div className="section-icon"><Radio size={16} /></div><div><b>Журнал сервиса</b><small>Получить записи HopLink за выбранный период с выбранного узла.</small></div></div>
+          <button className="btn secondary" onClick={onGetJournal}>Получить журнал…</button>
+        </div>
         <div className="table-card settings-card">
           <div className="settings-section">
             <div className="section-icon"><Radio size={16} /></div>
             <div><b>Hysteria2</b><small>Параметры входного и межсерверных подключений.</small></div>
           </div>
-          <label className="field">SNI<input value={state.sni} onChange={event => onChange({ sni: event.target.value })} /></label>
+          <label className="field">SNI<input value={state.sni} onChange={event => onChange({ sni: event.target.value })} placeholder="Оставьте пустым, чтобы не отправлять" /><small className="field-hint">Пустое значение не добавляется в ссылку и не подставляется автоматически.</small></label>
+          <label className="field">UDP-маскировка
+            <select value={state.obfsType || ''} onChange={event => onChange({ obfsType: event.target.value as AppState['obfsType'], obfsPassword: event.target.value ? state.obfsPassword : '' })}>
+              <option value="">Выключена</option><option value="salamander">Salamander</option><option value="gecko">Gecko (экспериментальная)</option>
+            </select>
+          </label>
+          {!!state.obfsType && <div className="password-row mask-password-row">
+            <label className="field">Пароль UDP-маскировки
+              <input type="password" autoComplete="new-password" value={state.obfsPassword || ''} onChange={event => onChange({ obfsPassword: event.target.value })} />
+              <small className="field-hint">Один и тот же пароль используется HopLink и клиентом. При смене режима примените маршрут заново.</small>
+            </label>
+            <button className="btn secondary generate-password" type="button" onClick={() => onChange({ obfsPassword: generatePassword(32) })}>Сгенерировать</button>
+          </div>}
           <label className="field">UDP порт<input type="number" min="1" max="65535" value={state.port} onChange={event => onChange({ port: Number(event.target.value) })} /></label>
           <label className="field">
             Домен входного узла (необязательно)
             <input value={state.entryDomain} onChange={event => onChange({ entryDomain: event.target.value })} placeholder="vpn.example.com" />
             <small className="field-hint">В ссылку подключения будет добавлен порт маршрута: {state.port}.</small>
+          </label>
+          <label className="field">Уровень логирования узлов
+            <select value={state.logLevel || 'warn'} onChange={event => onChange({ logLevel: event.target.value as typeof state.logLevel })}>
+              <option value="error">Только ошибки</option><option value="warn">Предупреждения</option><option value="info">Информация</option><option value="debug">Отладка</option><option value="trace">Подробная трассировка</option>
+            </select>
+            <small className="field-hint">Уровень применяется ко всем узлам маршрута при нажатии «Применить».</small>
           </label>
         </div>
 

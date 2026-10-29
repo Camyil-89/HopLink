@@ -13,7 +13,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -24,16 +23,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
-	hyclient "github.com/apernet/hysteria/core/v2/client"
-	hyerrors "github.com/apernet/hysteria/core/v2/errors"
 	hyserver "github.com/apernet/hysteria/core/v2/server"
 )
-
-const defaultHy2SNI = "www.cloudflare.com"
 
 type hy2User struct{ name, password string }
 type hy2PasswordAuth struct {
@@ -41,16 +35,29 @@ type hy2PasswordAuth struct {
 	users    []hy2User
 }
 
-func (a hy2PasswordAuth) Authenticate(_ net.Addr, auth string, _ uint64) (bool, string) {
-	if len(auth) == len(a.password) && subtle.ConstantTimeCompare([]byte(auth), []byte(a.password)) == 1 {
+func (a hy2PasswordAuth) Authenticate(addr net.Addr, auth string, tx uint64) (bool, string) {
+	// Compare fixed-size digests so a length mismatch does not skip a candidate.
+	digest := sha256.Sum256([]byte(auth))
+	relayDigest := sha256.Sum256([]byte(a.password))
+	selected := subtle.ConstantTimeCompare(digest[:], relayDigest[:])
+	index := 0
+	for i, user := range a.users {
+		userDigest := sha256.Sum256([]byte(user.password))
+		match := subtle.ConstantTimeCompare(digest[:], userDigest[:])
+		selectUser := match & (1 - selected)
+		index = subtle.ConstantTimeSelect(selectUser, i+1, index)
+		selected |= match
+	}
+	if selected == 0 {
+		logWarnf("[HY2_AUTH_REJECT] peer=%s reason=invalid_credential tx=%d", addr, tx)
+		return false, ""
+	}
+	if index == 0 {
+		logDebugf("[HY2_AUTH_ACCEPT] peer=%s id=relay tx=%d", addr, tx)
 		return true, "relay"
 	}
-	for _, user := range a.users {
-		if len(auth) == len(user.password) && subtle.ConstantTimeCompare([]byte(auth), []byte(user.password)) == 1 {
-			return true, user.name
-		}
-	}
-	return false, ""
+	logDebugf("[HY2_AUTH_ACCEPT] peer=%s id=%s tx=%d", addr, a.users[index-1].name, tx)
+	return true, a.users[index-1].name
 }
 
 func loadHy2Users(path string) ([]hy2User, error) {
@@ -114,164 +121,6 @@ func (hy2Events) UDPError(addr net.Addr, id string, session uint32, err error) {
 	}
 }
 
-type hy2ClientManager struct {
-	mu       sync.Mutex
-	current  hyclient.Client
-	addr     string
-	password string
-	sni      string
-	insecure bool
-	rootCAs  *x509.CertPool
-}
-
-func newHy2ClientManager(addr, password, sni string, insecure bool, rootCAs *x509.CertPool) *hy2ClientManager {
-	return &hy2ClientManager{addr: addr, password: password, sni: sni, insecure: insecure, rootCAs: rootCAs}
-}
-func (m *hy2ClientManager) get() (hyclient.Client, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.current != nil {
-		return m.current, nil
-	}
-	addr, err := net.ResolveUDPAddr("udp", m.addr)
-	if err != nil {
-		return nil, fmt.Errorf("resolve Hysteria2 forward %q: %w", m.addr, err)
-	}
-	started := time.Now()
-	c, info, err := hyclient.NewClient(&hyclient.Config{ServerAddr: addr, Auth: m.password, TLSConfig: hyclient.TLSConfig{ServerName: m.sni, InsecureSkipVerify: m.insecure, RootCAs: m.rootCAs}, QUICConfig: hyclient.QUICConfig{KeepAlivePeriod: 10 * time.Second, MaxIdleTimeout: 60 * time.Second}})
-	if err != nil {
-		return nil, err
-	}
-	m.current = c
-	logInfof("[HY2_UPSTREAM_READY] server=%s remote=%s udp=%t elapsed=%s", m.addr, info.ServerAddr, info.UDPEnabled, time.Since(started).Round(time.Millisecond))
-	if !info.UDPEnabled {
-		_ = c.Close()
-		m.current = nil
-		return nil, fmt.Errorf("upstream Hysteria2 server did not enable UDP")
-	}
-	return c, nil
-}
-func (m *hy2ClientManager) invalidate(c hyclient.Client) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.current == c {
-		m.current = nil
-		_ = c.Close()
-		logWarnf("[HY2_UPSTREAM_RESET] server=%s reason=connection_closed", m.addr)
-	}
-}
-func isHy2Closed(err error) bool { var closed hyerrors.ClosedError; return errors.As(err, &closed) }
-func (m *hy2ClientManager) TCP(addr string) (net.Conn, error) {
-	c, err := m.get()
-	if err != nil {
-		return nil, err
-	}
-	stream, err := c.TCP(addr)
-	if err == nil {
-		return hy2TCPConn{Conn: stream, manager: m, owner: c}, nil
-	}
-	if !isHy2Closed(err) {
-		return nil, err
-	}
-	m.invalidate(c)
-	c, err = m.get()
-	if err != nil {
-		return nil, err
-	}
-	stream, err = c.TCP(addr)
-	if err != nil && isHy2Closed(err) {
-		m.invalidate(c)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return hy2TCPConn{Conn: stream, manager: m, owner: c}, nil
-}
-func (m *hy2ClientManager) UDP(addr string) (hyserver.UDPConn, error) {
-	c, err := m.get()
-	if err != nil {
-		return nil, err
-	}
-	u, err := c.UDP()
-	if err == nil {
-		return hy2UDPConn{conn: u, manager: m, owner: c}, nil
-	}
-	if !isHy2Closed(err) {
-		return nil, err
-	}
-	m.invalidate(c)
-	c, err = m.get()
-	if err != nil {
-		return nil, err
-	}
-	u, err = c.UDP()
-	if err != nil && isHy2Closed(err) {
-		m.invalidate(c)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return hy2UDPConn{conn: u, manager: m, owner: c}, nil
-}
-func (*hy2ClientManager) CheckUDP(string) error { return nil }
-
-func (m *hy2ClientManager) Close() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.current != nil {
-		_ = m.current.Close()
-		m.current = nil
-	}
-}
-
-type hy2TCPConn struct {
-	net.Conn
-	manager *hy2ClientManager
-	owner   hyclient.Client
-}
-
-func (c hy2TCPConn) Read(p []byte) (int, error) {
-	n, err := c.Conn.Read(p)
-	if isHy2Closed(err) {
-		c.manager.invalidate(c.owner)
-	}
-	return n, err
-}
-func (c hy2TCPConn) Write(p []byte) (int, error) {
-	n, err := c.Conn.Write(p)
-	if isHy2Closed(err) {
-		c.manager.invalidate(c.owner)
-	}
-	return n, err
-}
-
-type hy2UDPConn struct {
-	conn    hyclient.HyUDPConn
-	manager *hy2ClientManager
-	owner   hyclient.Client
-}
-
-func (c hy2UDPConn) ReadFrom(b []byte) (int, string, error) {
-	p, addr, err := c.conn.Receive()
-	if isHy2Closed(err) {
-		c.manager.invalidate(c.owner)
-	}
-	if err != nil {
-		return 0, "", err
-	}
-	return copy(b, p), addr, nil
-}
-func (c hy2UDPConn) WriteTo(p []byte, addr string) (int, error) {
-	if err := c.conn.Send(p, addr); err != nil {
-		if isHy2Closed(err) {
-			c.manager.invalidate(c.owner)
-		}
-		return 0, err
-	}
-	return len(p), nil
-}
-func (c hy2UDPConn) Close() error { return c.conn.Close() }
-
 func loadHy2Certificate(certPath, keyPath, certDir, sni string) ([]tls.Certificate, string, string, error) {
 	if (certPath == "") != (keyPath == "") {
 		return nil, "", "", fmt.Errorf("укажите вместе -hy2-cert и -hy2-cert-key")
@@ -329,7 +178,7 @@ func generateHy2Certificate(sni string) ([]byte, []byte, error) {
 	tmpl := x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: sni}, NotBefore: now.Add(-time.Minute), NotAfter: now.AddDate(5, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
 	if ip := net.ParseIP(sni); ip != nil {
 		tmpl.IPAddresses = []net.IP{ip}
-	} else {
+	} else if sni != "" {
 		tmpl.DNSNames = []string{sni}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
@@ -343,30 +192,9 @@ func generateHy2Certificate(sni string) ([]byte, []byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: priv}), nil
 }
 
-func loadHy2RootCAs(caPath string) (*x509.CertPool, error) {
-	if caPath == "" {
-		return nil, nil
-	}
-	pemData, err := os.ReadFile(caPath)
-	if err != nil {
-		return nil, err
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(pemData) {
-		return nil, fmt.Errorf("в -hy2-ca нет PEM сертификатов")
-	}
-	return pool, nil
-}
-
-func runHy2(mode, listen, forward, password, sni, upstreamSNI, certPath, keyPath, certDir, caPath, publicHost, usersFile string, insecure bool) error {
+func runHy2(listen, password, sni, certPath, keyPath, certDir, publicHost, usersFile, obfsMode, obfsKeyFile string) error {
 	if password == "" {
 		return fmt.Errorf("укажите общий непустой -key для Hysteria2")
-	}
-	if sni == "" {
-		sni = defaultHy2SNI
-	}
-	if upstreamSNI == "" {
-		upstreamSNI = sni
 	}
 	certs, certPin, activeCertPath, err := loadHy2Certificate(certPath, keyPath, certDir, sni)
 	if err != nil {
@@ -376,35 +204,41 @@ func runHy2(mode, listen, forward, password, sni, upstreamSNI, certPath, keyPath
 	if err != nil {
 		return fmt.Errorf("Hysteria2 users: %w", err)
 	}
+	var obfsPassword string
+	if obfsMode != "" {
+		if obfsMode != "salamander" && obfsMode != "gecko" {
+			return fmt.Errorf("неподдерживаемый тип UDP-маскировки %q", obfsMode)
+		}
+		if obfsKeyFile == "" {
+			return fmt.Errorf("для UDP-маскировки укажите -hy2-obfs-key-file")
+		}
+		data, readErr := os.ReadFile(obfsKeyFile)
+		if readErr != nil {
+			return fmt.Errorf("прочитать пароль UDP-маскировки: %w", readErr)
+		}
+		obfsPassword = string(data)
+		if len([]byte(obfsPassword)) < 4 {
+			return fmt.Errorf("пароль UDP-маскировки должен содержать не менее 4 байт")
+		}
+	} else if obfsKeyFile != "" {
+		return fmt.Errorf("-hy2-obfs-key-file требует -hy2-obfs")
+	}
 	for _, user := range users {
 		if len(user.password) == len(password) && subtle.ConstantTimeCompare([]byte(user.password), []byte(password)) == 1 {
 			return fmt.Errorf("пароль клиента %q должен отличаться от ключа межсерверной цепочки", user.name)
 		}
 	}
-	var outbound Transport
-	var manager *hy2ClientManager
-	if mode == "hy2-enter" {
-		if forward == "" {
-			return fmt.Errorf("в режиме hy2-enter укажите -f host:port второго Hysteria2 сервера")
-		}
-		rootCAs, caErr := loadHy2RootCAs(caPath)
-		if caErr != nil {
-			return fmt.Errorf("load Hysteria2 upstream CA: %w", caErr)
-		}
-		manager = newHy2ClientManager(forward, password, upstreamSNI, insecure, rootCAs)
-		defer manager.Close()
-		if _, err = manager.get(); err != nil {
-			return fmt.Errorf("connect to Hysteria2 forward %s: %w", forward, err)
-		}
-		outbound = manager
-	} else if mode != "hy2-forward" {
-		return fmt.Errorf("unknown Hysteria2 mode %q", mode)
-	}
 	pc, err := net.ListenPacket("udp", listen)
 	if err != nil {
 		return fmt.Errorf("listen Hysteria2 UDP %s: %w", listen, err)
 	}
-	config := &hyserver.Config{TLSConfig: hyserver.TLSConfig{Certificates: certs}, Conn: pc, Outbound: outbound, Authenticator: hy2PasswordAuth{password: password, users: users}, EventLogger: hy2Events{}}
+	if obfsMode != "" {
+		pc, err = newObfsPacketConn(pc, obfsMode, obfsPassword)
+		if err != nil {
+			return fmt.Errorf("Hysteria2 UDP obfuscation: %w", err)
+		}
+	}
+	config := exitServerConfig(pc, certs, password, users)
 	srv, err := hyserver.NewServer(config)
 	if err != nil {
 		_ = pc.Close()
@@ -413,34 +247,26 @@ func runHy2(mode, listen, forward, password, sni, upstreamSNI, certPath, keyPath
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	serveErr := make(chan error, 1)
+	sort.Slice(users, func(i, j int) bool { return users[i].name < users[j].name })
 	go func() { serveErr <- srv.Serve() }()
-	logInfof("[HY2_SERVER_START] mode=%s listen=%s sni=%s forward=%s udp=true tun_interface=false", mode, listen, sni, forward)
-	if mode == "hy2-enter" {
-		if publicHost == "" {
-			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-			publicHost, err = fetchPublicIP(ctx)
-			cancel()
-		}
-		if err != nil {
-			logWarnf("[HY2_HIDDIFY_LINK] не удалось определить публичный адрес: %v; задайте -hy2-public-host", err)
-		} else if publicHost != "" {
-			_, port, splitErr := net.SplitHostPort(pc.LocalAddr().String())
-			if splitErr != nil {
-				logWarnf("[HY2_HIDDIFY_LINK] не удалось определить порт из %q: %v", pc.LocalAddr(), splitErr)
+	logInfof("[HY2_SERVER_START] mode=hy2-forward listen=%s sni=%s end_to_end=true obfs=%s", listen, sni, obfsMode)
+	logInfof("[HY2_DIAGNOSTICS] level=trace logs UDP packet metadata; authentication rejection logs peer and reason; credentials and packet contents are never logged")
+	if publicHost != "" {
+		_, port, splitErr := net.SplitHostPort(pc.LocalAddr().String())
+		if splitErr != nil {
+			logWarnf("[HY2_HIDDIFY_LINK] не удалось определить порт из %q: %v", pc.LocalAddr(), splitErr)
+		} else {
+			fmt.Println("\nHiddify — строки подключения:")
+			if len(users) == 0 {
+				fmt.Printf("%s\n\n", makeHy2ShareLink(password, publicHost, port, sni, certPin, "HopLink"))
 			} else {
-				fmt.Println("\nHiddify — строки подключения:")
-				if len(users) == 0 {
-					fmt.Printf("%s\n\n", makeHy2ShareLink(password, publicHost, port, sni, certPin, "HopLink"))
-				} else {
-					sort.Slice(users, func(i, j int) bool { return users[i].name < users[j].name })
-					for _, user := range users {
-						fmt.Printf("%s: %s\n", user.name, makeHy2ShareLink(user.password, publicHost, port, sni, certPin, "HopLink-"+user.name))
-					}
-					fmt.Println()
+				for _, user := range users {
+					fmt.Printf("%s: %s\n", user.name, makeHy2ShareLink(user.password, publicHost, port, sni, certPin, "HopLink-"+user.name))
 				}
-				logInfof("[HY2_HIDDIFY_LINK_READY] host=%s port=%s sni=%s pin_sha256=%s certificate=%s", publicHost, port, sni, certPin, activeCertPath)
-				logInfof("[HY2_USERS_READY] count=%d", len(users))
+				fmt.Println()
 			}
+			logInfof("[HY2_HIDDIFY_LINK_READY] host=%s port=%s sni=%s pin_sha256=%s certificate=%s", publicHost, port, sni, certPin, activeCertPath)
+			logInfof("[HY2_USERS_READY] count=%d", len(users))
 		}
 	}
 	select {
@@ -452,13 +278,28 @@ func runHy2(mode, listen, forward, password, sni, upstreamSNI, certPath, keyPath
 			return fmt.Errorf("Hysteria2 Serve: %w", err)
 		}
 	}
-	logInfof("[HY2_SERVER_STOP] mode=%s listen=%s", mode, listen)
+	logInfof("[HY2_SERVER_STOP] listen=%s", listen)
 	return nil
+}
+
+func exitServerConfig(pc net.PacketConn, certs []tls.Certificate, password string, users []hy2User) *hyserver.Config {
+	return &hyserver.Config{
+		TLSConfig:             hyserver.TLSConfig{Certificates: certs},
+		Conn:                  pc,
+		Authenticator:         hy2PasswordAuth{password: password, users: users},
+		EventLogger:           hy2Events{},
+		IgnoreClientBandwidth: true,
+		CongestionConfig:      hyserver.CongestionConfig{Type: "bbr", BBRProfile: "conservative"},
+	}
 }
 
 func makeHy2ShareLink(password, host, port, sni, fingerprint, name string) string {
 	host = strings.Trim(strings.TrimSpace(host), "[]")
-	u := &url.URL{Scheme: "hysteria2", User: url.User(password), Host: net.JoinHostPort(host, port), Path: "/", RawQuery: url.Values{"pinSHA256": {fingerprint}, "sni": {sni}}.Encode(), Fragment: name}
+	query := url.Values{"pinSHA256": {fingerprint}}
+	if sni != "" {
+		query.Set("sni", sni)
+	}
+	u := &url.URL{Scheme: "hysteria2", User: url.User(password), Host: net.JoinHostPort(host, port), Path: "/", RawQuery: query.Encode(), Fragment: name}
 	return u.String()
 }
 
