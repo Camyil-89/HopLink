@@ -16,7 +16,7 @@ if (process.platform === 'win32') args.push('-webview2', 'browser')
 if (process.env.DESKTOP_VERSION) args.push('-ldflags', `-X main.version=${process.env.DESKTOP_VERSION}`)
 
 // Wails generates Go bindings before running its configured frontend build.
-// The backend package embeds frontend/dist, so that directory must already
+// The backend package embeds app/assets/ui/dist, so that directory must already
 // exist when binding generation compiles the Go packages.
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 for (const npmArgs of [['ci'], ['run', 'build']]) {
@@ -30,8 +30,8 @@ for (const npmArgs of [['ci'], ['run', 'build']]) {
   if ((frontendBuild.status ?? 1) !== 0) process.exit(frontendBuild.status ?? 1)
 }
 
-if (!existsSync(path.join(frontendDir, 'dist', 'index.html'))) {
-  throw new Error('Frontend build completed without producing internal/desktop/frontend/dist/index.html')
+if (!existsSync(path.join(repoRoot, 'internal', 'desktop', 'app', 'assets', 'ui', 'dist', 'index.html'))) {
+  throw new Error('Frontend build completed without producing internal/desktop/app/assets/ui/dist/index.html')
 }
 
 // Wails expects build:dir/bin to exist before it stages the application.

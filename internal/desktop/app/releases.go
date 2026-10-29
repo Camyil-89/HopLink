@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -237,9 +238,13 @@ func (a *App) downloadServerBinary(ctx context.Context, arch string) (string, er
 			return "", err
 		}
 		defer reader.Close()
-		out, err := os.CreateTemp("", "hoplink-linux-"+arch+"-*")
+		executable, err := os.Executable()
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("путь к desktop-приложению: %w", err)
+		}
+		out, err := os.CreateTemp(filepath.Dir(executable), ".hoplink-linux-"+arch+"-*")
+		if err != nil {
+			return "", fmt.Errorf("не удалось сохранить HopLink рядом с desktop-приложением: %w", err)
 		}
 		defer out.Close()
 		if _, err = io.Copy(out, io.LimitReader(reader, 100<<20)); err != nil {

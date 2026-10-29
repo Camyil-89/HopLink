@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"hoplink/internal/desktop/security"
+	"hoplink/internal/desktop/app/security"
 )
 
 const vaultFormat = security.Format

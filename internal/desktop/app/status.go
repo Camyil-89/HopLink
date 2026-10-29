@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"hoplink/internal/desktop/remote"
+	"hoplink/internal/desktop/app/remote"
 )
 
 type ServerServiceStatus struct {

@@ -3,7 +3,7 @@ package desktop
 import (
 	"context"
 	"fmt"
-	"hoplink/internal/desktop/remote"
+	"hoplink/internal/desktop/app/remote"
 )
 
 type routeRemovalTarget struct {
@@ -29,7 +29,7 @@ func allRouteRemovalTargets(routes []Route) []routeRemovalTarget {
 }
 
 func removeServerDeployment(route *Route, server Server) {
-	wasEntry := routeIsEntry(*route, server.ID)
+	wasEntry := routeIsEntryRoute(*route, server.ID)
 	remaining := make([]Server, 0, len(route.DeployedServers))
 	for _, deployed := range route.DeployedServers {
 		if deployed.ID != server.ID && !(deployed.Host == server.Host && deployed.SSHPort == server.SSHPort) {
@@ -238,7 +238,7 @@ func (a *App) DeleteServer(id string) (AppConfig, error) {
 	a.config.Servers = servers
 	for routeIndex := range a.config.Routes {
 		route := &a.config.Routes[routeIndex]
-		wasEntry := routeIsEntry(*route, id)
+		wasEntry := routeIsEntryRoute(*route, id)
 		mapServers := route.MapServers[:0]
 		for _, mapped := range route.MapServers {
 			if mapped.ID != id {

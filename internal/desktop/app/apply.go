@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/crypto/ssh"
-	"hoplink/internal/desktop/remote"
+	"hoplink/internal/desktop/app/remote"
 	"io"
 	"net"
 	"os"
