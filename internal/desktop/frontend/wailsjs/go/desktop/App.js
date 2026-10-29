@@ -62,6 +62,10 @@ export function RemoveRouteService(arg1) {
   return window['go']['desktop']['App']['RemoveRouteService'](arg1);
 }
 
+export function RenameRoute(arg1, arg2) {
+  return window['go']['desktop']['App']['RenameRoute'](arg1, arg2);
+}
+
 export function SaveMap(arg1, arg2) {
   return window['go']['desktop']['App']['SaveMap'](arg1, arg2);
 }

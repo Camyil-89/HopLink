@@ -10,7 +10,7 @@ type Props = {
 
 export function RemoveRouteServiceModal({ routeName, servers, onCancel, onConfirm }: Props) {
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal-backdrop">
       <div className="modal compact" role="dialog" aria-modal="true" aria-labelledby="remove-route-service-title" onClick={event => event.stopPropagation()}>
         <div className="modal-head">
           <div>

@@ -1,9 +1,9 @@
-import { ArrowRight, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowRight, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import type { Route, RouteServiceStatus } from '../types/app'
 
-type Props = { routes: Route[]; statuses: Record<string, RouteServiceStatus>; checking: boolean; onCheck: () => void; onSelect: (id: string) => void; onCreate: () => void; onDelete: (route: Route) => void }
+type Props = { routes: Route[]; statuses: Record<string, RouteServiceStatus>; checking: boolean; onCheck: () => void; onSelect: (id: string) => void; onCreate: () => void; onRename: (route: Route) => void; onDelete: (route: Route) => void }
 
-export function RoutesTab({ routes, statuses, checking, onCheck, onSelect, onCreate, onDelete }: Props) {
+export function RoutesTab({ routes, statuses, checking, onCheck, onSelect, onCreate, onRename, onDelete }: Props) {
   return (
     <section className="route-landing">
       <div className="route-landing-card">
@@ -18,6 +18,7 @@ export function RoutesTab({ routes, statuses, checking, onCheck, onSelect, onCre
                 <span><b>{route.name}</b><small>{route.mapServers?.length ?? 0} серверов · UDP {route.port}</small>{statuses[route.id] && <small className={`route-entry-ping ${statuses[route.id].entryLatencyMs !== undefined ? 'measured' : 'unavailable'}`}>Пинг от вас до входа: {statuses[route.id].entryLatencyMs !== undefined ? `${statuses[route.id].entryLatencyMs!.toFixed(1)} мс` : 'ICMP недоступен'}</small>}</span>
                 <span className="route-option-end">{statuses[route.id] && <span className={`route-status ${statuses[route.id].running === statuses[route.id].total && statuses[route.id].total > 0 ? 'running' : 'stopped'}`}>{statuses[route.id].running}/{statuses[route.id].total} работает</span>}<ArrowRight size={16} /></span>
               </button>
+              <button className="icon-btn route-rename-btn" title={`Переименовать маршрут «${route.name}»`} aria-label={`Переименовать маршрут «${route.name}»`} onClick={() => onRename(route)}><Pencil size={14} /></button>
               <button className="icon-btn danger route-delete-btn" title={`Удалить маршрут «${route.name}»`} aria-label={`Удалить маршрут «${route.name}»`} onClick={() => onDelete(route)}><Trash2 size={15} /></button>
             </div>
           ))}

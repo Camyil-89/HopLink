@@ -413,3 +413,23 @@ func (a *App) CreateRoute(name string) (AppConfig, error) {
 	}
 	return a.config, nil
 }
+
+func (a *App) RenameRoute(id, name string) (AppConfig, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return a.config, fmt.Errorf("укажите название маршрута")
+	}
+	a.storeActiveRouteLocked()
+	for i := range a.config.Routes {
+		if a.config.Routes[i].ID == id {
+			a.config.Routes[i].Name = name
+			if err := a.saveLocked(); err != nil {
+				return a.config, err
+			}
+			return a.config, nil
+		}
+	}
+	return a.config, fmt.Errorf("маршрут не найден")
+}

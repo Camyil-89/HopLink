@@ -16,6 +16,7 @@ import { RemoveTab } from '../tabs/RemoveTab'
 import { DesktopSettingsTab } from '../tabs/DesktopSettingsTab'
 import { UnsavedChangesModal } from '../modals/UnsavedChangesModal'
 import { RouteModal } from '../modals/RouteModal'
+import { RenameRouteModal } from '../modals/RenameRouteModal'
 import { DeleteRouteModal } from '../modals/DeleteRouteModal'
 import { RemoveRouteServiceModal } from '../modals/RemoveRouteServiceModal'
 import { RouteJournalModal } from '../modals/RouteJournalModal'
@@ -38,6 +39,8 @@ export default function App(){
  const [routeStatuses,setRouteStatuses]=useState<Record<string,RouteServiceStatus>>({})
  const [journalOpen,setJournalOpen]=useState(false)
  const [checkingRoutes,setCheckingRoutes]=useState(false)
+ const [renameRouteTarget,setRenameRouteTarget]=useState<Route|null>(null)
+ const [renameRouteName,setRenameRouteName]=useState('')
  const [clearMapConfirm,setClearMapConfirm]=useState(false)
  const [operationResult,setOperationResult]=useState<'success'|'error'|'cancelled'|null>(null)
  const logEndRef=useRef<HTMLSpanElement>(null)
@@ -66,7 +69,7 @@ export default function App(){
  const addUser=async()=>{if(!draftUser.name||!draftUser.password)return;const users=editingUser?state.users.map(u=>u.id===editingUser?{...u,...draftUser}:u):[...state.users,{...draftUser,id:uid(),link:'',active:true}];try{const saved=await api().SaveUsers(users);setState(st=>({...st,...saved}));setDraftUser({name:'',password:''});setEditingUser(null);setUserForm(false);setNotice('Пользователь сохранён в настройках маршрута');setTimeout(()=>setNotice(''),2200)}catch(e:any){await handleAppError(e)}}
  const toggleUser=async(id:string,active:boolean)=>{const users=state.users.map(user=>user.id===id?{...user,active,link:active?user.link:''}:user);try{const saved=await api().SaveUsers(users);setState(st=>({...st,...saved}));setNotice(active?'Пользователь активирован. Примените маршрут, чтобы добавить его на сервер.':'Пользователь отключён. Примените маршрут, чтобы удалить его с сервера.');setTimeout(()=>setNotice(''),3500)}catch(e:any){await handleAppError(e)}}
  const deleteUser=async(id:string)=>{try{const saved=await api().SaveUsers(state.users.filter(u=>u.id!==id));setState(st=>({...st,...saved}));setNotice('Пользователь удалён');setTimeout(()=>setNotice(''),2200)}catch(e:any){await handleAppError(e)}}
- const toPersist=()=>{const sv=nodes.map(n=>{const s=n.data.server as Server;return {...s,x:n.position.x,y:n.position.y}});return {sv,ed:edges.map(e=>({id:e.id,source:e.source,target:e.target}))}}
+ const toPersist=()=>{const sv=nodes.map(n=>{const s=n.data.server as Server,incoming=edges.some(e=>e.target===n.id),outgoing=edges.some(e=>e.source===n.id),role=!incoming?'entry':!outgoing?'exit':'relay';return {...s,x:n.position.x,y:n.position.y,role}});return {sv,ed:edges.map(e=>({id:e.id,source:e.source,target:e.target}))}}
  const persistRouteDraft=async()=>{const {sv,ed}=toPersist();const saved=await api().SaveRouteDraft(sv,ed,state.sni,state.port,state.entryDomain,state.chainKey,state.certificate,state.certificateKey,state.logLevel||'warn',state.obfsType||'',state.obfsPassword||'') as State;setState({...state,...saved});setRouteStatuses(current=>{const next={...current};delete next[state.activeRouteId];return next});savedRouteSnapshot.current=routeSnapshot(sv,ed,state);return saved}
  const saveRoute=async()=>{try{await persistRouteDraft();setNotice('Маршрут сохранён');setTimeout(()=>setNotice(''),2200)}catch(e:any){await handleAppError(e)}}
  const withUnsavedGuard=(action:()=>void)=>{if(routeDirty){setPendingNavigation(()=>action);setUnsavedOpen(true)}else action()}
@@ -141,6 +144,7 @@ export default function App(){
   const submitVault=async(event:FormEvent)=>{event.preventDefault();if(!vaultPassword)return;setVaultMessage('');try{if(vaultStatus?.needsSetup)await api().SetVaultPassword(vaultPassword);else await api().UnlockVault(vaultPassword);setVaultPassword('');await loadUnlockedState()}catch(e:any){setVaultPassword('');setVaultMessage(String(e))}}
   const selectRoute=(id:string)=>withUnsavedGuard(()=>{void (async()=>{if(!id||id===state.activeRouteId){setRouteChosen(true);setRouteTab('map');setPage('routes');return}try{const next=await api().SelectRoute(id) as State;installState(next);setLinks({});setActiveNode(null);setRouteChosen(true);setRouteTab('map');setPage('routes');setNotice(`Открыт маршрут «${next.routes.find(r=>r.id===id)?.name||''}»`)}catch(e:any){await handleAppError(e)}})()})
   const createRoute=async()=>{try{const next=await api().CreateRoute(routeName) as State;installState(next);setLinks({});setRouteChosen(true);setRouteTab('map');setPage('routes');setRouteName('');setRouteForm(false);setNotice('Маршрут создан')}catch(e:any){await handleAppError(e)}}
+  const renameRoute=async()=>{if(!renameRouteTarget)return;try{const next=await api().RenameRoute(renameRouteTarget.id,renameRouteName) as State;setState({...state,...next});setRenameRouteTarget(null);setNotice('Название маршрута сохранено');setTimeout(()=>setNotice(''),2200)}catch(e:any){await handleAppError(e)}}
  const checkRouteServices=async()=>{
   if(checkingRoutes)return
   setCheckingRoutes(true)
@@ -185,7 +189,7 @@ export default function App(){
       />
       <main className={`main ${page === 'routes' && routeChosen && routeTab === 'map' ? 'route-map-main' : page === 'routes' && !routeChosen ? 'route-list-main' : ''}`}>
         <Topbar section={nav.find(item => item.id === page)?.label || 'Маршруты'} routeName={page === 'routes' && routeChosen ? activeRouteName : undefined} />
-        {page === 'routes' && !routeChosen && <RoutesTab routes={state.routes} statuses={routeStatuses} checking={checkingRoutes} onCheck={() => void checkRouteServices()} onSelect={selectRoute} onCreate={() => { setRouteName(''); setRouteForm(true) }} onDelete={setDeleteRouteTarget} />}
+        {page === 'routes' && !routeChosen && <RoutesTab routes={state.routes} statuses={routeStatuses} checking={checkingRoutes} onCheck={() => void checkRouteServices()} onSelect={selectRoute} onCreate={() => { setRouteName(''); setRouteForm(true) }} onRename={route => { setRenameRouteTarget(route); setRenameRouteName(route.name) }} onDelete={setDeleteRouteTarget} />}
         {page === 'routes' && routeChosen && <RouteWorkspaceHeader
           routeName={activeRouteName || ''}
           tab={routeTab}
@@ -258,6 +262,7 @@ export default function App(){
       </main>
 
       {routeForm && <RouteModal name={routeName} onNameChange={setRouteName} onClose={() => setRouteForm(false)} onCreate={() => void createRoute()} />}
+      {renameRouteTarget && <RenameRouteModal name={renameRouteName} onNameChange={setRenameRouteName} onClose={() => setRenameRouteTarget(null)} onSave={() => void renameRoute()} />}
       {deleteRouteTarget && <DeleteRouteModal route={deleteRouteTarget} onCancel={() => setDeleteRouteTarget(null)} onConfirm={() => void deleteRoute(deleteRouteTarget)} />}
       {journalOpen && <RouteJournalModal servers={state.deployedServers || []} onClose={() => setJournalOpen(false)} onLoad={(serverID, since, until) => api().GetRouteJournal(state.activeRouteId, serverID, since, until)} />}
       {clearMapConfirm && <ClearMapModal serverCount={nodes.length} connectionCount={edges.length} onCancel={() => setClearMapConfirm(false)} onConfirm={() => { setNodes([]); setEdges([]); setActiveNode(null); setClearMapConfirm(false) }} />}

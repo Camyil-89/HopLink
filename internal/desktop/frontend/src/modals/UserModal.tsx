@@ -5,7 +5,7 @@ type Props = { draft: UserDraft; editing: boolean; onChange: (draft: UserDraft) 
 
 export function UserModal({ draft, editing, onChange, onGeneratePassword, onClose, onSave }: Props) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal compact" onClick={event => event.stopPropagation()}>
         <div className="modal-head"><div><h2>{editing ? 'Изменить пользователя' : 'Новый пользователь'}</h2><p>Логин и пароль для подключения Hiddify</p></div><button className="icon-btn" onClick={onClose}><X size={17} /></button></div>
         <div className="modal-fields">

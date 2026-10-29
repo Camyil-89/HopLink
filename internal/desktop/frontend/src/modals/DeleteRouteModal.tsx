@@ -6,7 +6,7 @@ type Props = { route: Route; onCancel: () => void; onConfirm: () => void }
 export function DeleteRouteModal({ route, onCancel, onConfirm }: Props) {
   const servers: Server[] = route.deployedServers || []
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal-backdrop">
       <div className="modal compact" role="dialog" aria-modal="true" aria-labelledby="delete-route-title" onClick={event => event.stopPropagation()}>
         <div className="modal-head">
           <div><h2 id="delete-route-title">Удалить сервис и маршрут?</h2><p>Маршрут «{route.name}»</p></div>

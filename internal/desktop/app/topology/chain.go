@@ -51,7 +51,7 @@ func Validate(nodes []Node, edges []Edge) error {
 		if connections == 1 && node.Role != "entry" && node.Role != "exit" {
 			return fmt.Errorf("для крайнего сервера %s выберите вход или выход", node.Name)
 		}
-		if connections > 1 && node.Role != "" {
+		if connections > 1 && node.Role != "" && node.Role != "relay" {
 			return fmt.Errorf("сервер %s с двумя связями не может быть входом или выходом", node.Name)
 		}
 	}
@@ -64,6 +64,9 @@ func Ordered(nodes []Node, edges []Edge) ([]string, error) {
 	}
 	if len(nodes) == 0 {
 		return nil, nil
+	}
+	if len(nodes) == 1 {
+		return []string{nodes[0].ID}, nil
 	}
 	byID := map[string]Node{}
 	adjacent := map[string][]string{}
