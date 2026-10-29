@@ -9,7 +9,6 @@
 
 # Text files are local data by default; only dependency manifests and examples belong in Git.
 *.txt
-!requirements.txt
 !deploy/
 deploy/*.txt.example
 
@@ -21,7 +20,11 @@ deploy/*.txt.example
 *.dylib
 /bin/
 /dist/
-/build/
+/build/*
+!/build/appicon.png
+!/build/windows/
+/build/windows/*
+!/build/windows/icon.ico
 
 # Local Go caches
 .gocache/
@@ -31,6 +34,13 @@ __pycache__/
 
 # Build artifacts
 /HopLink*
+
+# Wails desktop frontend build artifacts
+/internal/desktop/frontend/node_modules/
+/internal/desktop/frontend/dist/
+/internal/desktop/frontend/*.tsbuildinfo
+/internal/desktop/frontend/package.json.md5
+/internal/desktop/build/
 
 # Local deployment secrets and client credentials
 /.HopLink/
@@ -42,3 +52,6 @@ deploy/*.txt
 deploy/.user_links.json
 deploy/hy2-server.crt
 deploy/hy2-server.key
+
+deploy/settings.json
+deploy/map.json

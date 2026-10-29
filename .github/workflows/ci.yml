@@ -1,30 +1,168 @@
-name: CI
+name: CI and releases
 
 on:
   push:
-    branches:
-      - dev
-      - main
+    branches: [dev, main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
 
-jobs:
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      hoplink: ${{ steps.changes.outputs.hoplink }}
+      desktop: ${{ steps.changes.outputs.desktop }}
+      hoplink_version: ${{ steps.changes.outputs.hoplink_version }}
+      desktop_version: ${{ steps.changes.outputs.desktop_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ '${{ github.event_name }}' == 'push' && '${{ github.ref_name }}' == 'main' ]]; then
+            base='${{ github.event.before }}'
+            if [[ "$base" == '0000000000000000000000000000000000000000' ]]; then
+              files=$(git ls-files)
+            else
+              files=$(git diff --name-only "$base" HEAD)
+            fi
+            hoplink=false
+            desktop=false
+            if grep -Eq '^(cmd/hoplink/|internal/hoplink/|go\.(mod|sum)$)' <<< "$files"; then hoplink=true; fi
+            if grep -Eq '^(cmd/desktop/|internal/desktop/|scripts/build-desktop\.mjs$|go\.(mod|sum)$)' <<< "$files"; then desktop=true; fi
+          else
+            hoplink=false
+            desktop=false
+          fi
+          next_version() {
+            local latest major minor patch
+            latest=$(git tag -l "$1-v*" | sed -nE "s/^$1-v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p" | sort -V | tail -n 1)
+            latest=${latest:-0.0.0}
+            IFS=. read -r major minor patch <<< "$latest"
+            printf '%s.%s.%s' "$major" "$minor" "$((patch + 1))"
+          }
+          {
+            echo "hoplink=$hoplink"
+            echo "desktop=$desktop"
+            echo "hoplink_version=$(next_version hoplink)"
+            echo "desktop_version=$(next_version desktop-hoplink)"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: versions
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-15]
+        component: [hoplink, desktop-hoplink]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+      - name: Install Linux desktop dependencies
+        if: matrix.component == 'desktop-hoplink' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev
+      - uses: actions/setup-node@v4
+        if: matrix.component == 'desktop-hoplink'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/desktop/frontend/package-lock.json
+      - name: Test Go packages
+        if: matrix.component == 'hoplink'
+        run: go test ./...
+      - name: Build service
+        if: matrix.component == 'hoplink'
+        shell: pwsh
+        env:
+          HOPLINK_VERSION: ${{ needs.versions.outputs.hoplink_version }}
+        run: |
+          $suffix = if ($IsWindows) { '.exe' } else { '' }
+          go build -ldflags "-X main.version=$env:HOPLINK_VERSION" -o "deploy/hoplink-$env:RUNNER_OS$suffix" ./cmd/hoplink
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build desktop
+        if: matrix.component == 'desktop-hoplink'
+        env:
+          DESKTOP_VERSION: ${{ needs.versions.outputs.desktop_version }}
+        run: node scripts/build-desktop.mjs --go-run
+      - name: Package binary
+        shell: pwsh
+        env:
+          COMPONENT: ${{ matrix.component }}
+          HOPLINK_VERSION: ${{ needs.versions.outputs.hoplink_version }}
+          DESKTOP_VERSION: ${{ needs.versions.outputs.desktop_version }}
+        run: |
+          $platform = $env:RUNNER_OS.ToLowerInvariant()
+          if ($env:COMPONENT -eq 'hoplink') {
+            $source = if ($IsWindows) { 'deploy/hoplink-Windows.exe' } else { "deploy/hoplink-$env:RUNNER_OS" }
+            $version = $env:HOPLINK_VERSION
+          } else {
+            $source = if ($IsWindows) { 'deploy/HopLink.exe' } elseif ($IsMacOS) { 'deploy/HopLink.app' } else { 'deploy/HopLink' }
+            $version = $env:DESKTOP_VERSION
+          }
+          if (-not (Test-Path -LiteralPath $source)) { throw "Expected build output missing: $source" }
+          New-Item -ItemType Directory -Force release | Out-Null
+          $archive = "release/$env:COMPONENT-v$version-$platform.zip"
+          if ($env:COMPONENT -eq 'desktop-hoplink') {
+            New-Item -ItemType Directory -Force package/deploy, package/cmd, package/internal | Out-Null
+            Copy-Item -LiteralPath $source -Destination package/deploy -Recurse
+            Copy-Item -LiteralPath cmd/hoplink -Destination package/cmd -Recurse
+            Copy-Item -LiteralPath internal/hoplink -Destination package/internal -Recurse
+            Copy-Item -LiteralPath go.mod,go.sum -Destination package
+            Compress-Archive -Path package/* -DestinationPath $archive
+          } else {
+            Compress-Archive -LiteralPath $source -DestinationPath $archive
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.component }}-${{ runner.os }}
+          path: release/*.zip
+          if-no-files-found: error
 
-      - name: Build all packages
-        run: go build ./...
+  release:
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    needs: [versions, build]
+    strategy:
+      matrix:
+        include:
+          - component: hoplink
+            changed: hoplink
+            version: hoplink_version
+          - component: desktop-hoplink
+            changed: desktop
+            version: desktop_version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        if: needs.versions.outputs[matrix.changed] == 'true'
+        with:
+          pattern: ${{ matrix.component }}-*
+          path: release
+          merge-multiple: true
+      - name: Publish release
+        if: needs.versions.outputs[matrix.changed] == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.versions.outputs[matrix.version] }}
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          gh release create "$COMPONENT-v$VERSION" release/*.zip --target "$GITHUB_SHA" --title "$COMPONENT v$VERSION" --generate-notes

@@ -1,5 +1,0 @@
-# Порядок строк: входной узел -> промежуточные узлы -> выходной узел.
-# Поля: SSH_USER SSH_PASSWORD SSH_HOST SSH_PORT
-# Например:
-# root replace-with-ssh-password 1.1.1.1 22
-# root replace-with-ssh-password 2.2.2.2 22
