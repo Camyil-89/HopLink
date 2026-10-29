@@ -38,24 +38,25 @@ jobs:
             fi
             hoplink=false
             desktop=false
-            if grep -Eq '^(cmd/hoplink/|internal/hoplink/|go\.(mod|sum)$)' <<< "$files"; then hoplink=true; fi
-            if grep -Eq '^(cmd/desktop/|internal/desktop/|scripts/build-desktop\.mjs$|go\.(mod|sum)$)' <<< "$files"; then desktop=true; fi
+            if grep -Eq '^(cmd/hoplink/|internal/hoplink/|go\.(mod|sum)$|\.github/workflows/ci\.yml$)' <<< "$files"; then hoplink=true; fi
+            if grep -Eq '^(cmd/desktop/|internal/desktop/|scripts/build-desktop\.mjs$|go\.(mod|sum)$|\.github/workflows/ci\.yml$)' <<< "$files"; then desktop=true; fi
           else
             hoplink=false
             desktop=false
           fi
-          next_version() {
+          next_release_version() {
             local latest major minor patch
-            latest=$(git tag -l "$1-v*" | sed -nE "s/^$1-v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p" | sort -V | tail -n 1)
+            latest=$(git tag -l 'hoplink-v*' 'desktop-hoplink-v*' | sed -nE 's/^(hoplink|desktop-hoplink)-v([0-9]+\.[0-9]+\.[0-9]+)$/\2/p' | sort -V | tail -n 1)
             latest=${latest:-0.0.0}
             IFS=. read -r major minor patch <<< "$latest"
             printf '%s.%s.%s' "$major" "$minor" "$((patch + 1))"
           }
+          version=$(next_release_version)
           {
             echo "hoplink=$hoplink"
             echo "desktop=$desktop"
-            echo "hoplink_version=$(next_version hoplink)"
-            echo "desktop_version=$(next_version desktop-hoplink)"
+            echo "hoplink_version=$version"
+            echo "desktop_version=$version"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -132,18 +133,16 @@ jobs:
           HOPLINK_VERSION: ${{ needs.versions.outputs.hoplink_version }}
           DESKTOP_VERSION: ${{ needs.versions.outputs.desktop_version }}
         run: |
-          $platform = $env:RUNNER_OS.ToLowerInvariant()
+          $platform = if ($IsMacOS) { 'darwin' } elseif ($IsWindows) { 'windows' } else { 'linux' }
           if ($env:COMPONENT -eq 'hoplink') {
-            $source = if ($IsWindows) { 'deploy/hoplink-Windows.exe' } elseif ($IsLinux) { 'deploy/hoplink-Linux-amd64' } else { 'deploy/hoplink-Darwin' }
-            $version = $env:HOPLINK_VERSION
+            $source = 'deploy/hoplink-Linux-amd64'
           } else {
             $source = if ($IsWindows) { 'deploy/HopLink.exe' } elseif ($IsMacOS) { 'deploy/bin/hoplink-desktop.app' } else { 'deploy/HopLink' }
-            $version = $env:DESKTOP_VERSION
           }
           if (-not (Test-Path -LiteralPath $source)) { throw "Expected build output missing: $source" }
           New-Item -ItemType Directory -Force release | Out-Null
-          $archive = "release/$env:COMPONENT-v$version-$platform.zip"
-          $archivePath = Join-Path (Resolve-Path release).Path "$env:COMPONENT-v$version-$platform.zip"
+          $archive = "release/$env:COMPONENT-$platform.zip"
+          $archivePath = Join-Path (Resolve-Path release).Path "$env:COMPONENT-$platform.zip"
           if ($env:COMPONENT -eq 'desktop-hoplink') {
             New-Item -ItemType Directory -Force package/deploy, package/cmd, package/internal | Out-Null
             Copy-Item -LiteralPath $source -Destination package/deploy -Recurse
@@ -169,48 +168,42 @@ jobs:
               Compress-Archive -LiteralPath $source -DestinationPath $archive
             }
           }
+          if ($env:COMPONENT -eq 'hoplink') {
+            Copy-Item -LiteralPath $source -Destination 'release/hoplink-Linux-amd64'
+            Copy-Item -LiteralPath 'deploy/hoplink-Linux-arm64' -Destination 'release/hoplink-Linux-arm64'
+          } elseif ($IsWindows) {
+            Copy-Item -LiteralPath $source -Destination 'release/desktop-hoplink-windows.exe'
+          } elseif ($IsMacOS) {
+            Copy-Item -LiteralPath $source -Destination 'release/desktop-hoplink-darwin.app' -Recurse
+            tar -czf 'release/desktop-hoplink-darwin-app.tar.gz' -C deploy/bin hoplink-desktop.app
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            Copy-Item -LiteralPath $source -Destination 'release/desktop-hoplink-linux'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.component }}-${{ runner.os }}
-          path: release/*.zip
+          path: release/**
           if-no-files-found: error
 
   release:
-    if: github.event_name == 'push' && github.ref_name == 'main'
+    if: github.event_name == 'push' && github.ref_name == 'main' && (needs.versions.outputs.hoplink == 'true' || needs.versions.outputs.desktop == 'true')
     needs: [versions, build]
-    strategy:
-      matrix:
-        include:
-          - component: hoplink
-            changed: hoplink
-            version: hoplink_version
-          - component: desktop-hoplink
-            changed: desktop
-            version: desktop_version
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
-        if: needs.versions.outputs[matrix.changed] == 'true'
         with:
-          pattern: ${{ matrix.component }}-*
+          pattern: '*'
           path: release
           merge-multiple: true
       - name: Publish release
-        if: needs.versions.outputs[matrix.changed] == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          VERSION: ${{ needs.versions.outputs[matrix.version] }}
-          COMPONENT: ${{ matrix.component }}
+          VERSION: ${{ needs.versions.outputs.hoplink_version }}
         run: |
           set -euo pipefail
-          gh release create "$COMPONENT-v$VERSION" release/*.zip --target "$GITHUB_SHA" --title "$COMPONENT v$VERSION" --generate-notes
-          gh release delete "$COMPONENT-latest" --cleanup-tag --yes 2>/dev/null || true
-          mkdir -p latest
-          for file in release/*.zip; do
-            name=$(basename "$file")
-            cp "$file" "latest/${name/-v$VERSION/}"
-          done
-          gh release create "$COMPONENT-latest" latest/*.zip --target "$GITHUB_SHA" --title "$COMPONENT latest ($VERSION)" --notes "Latest $COMPONENT build: v$VERSION" --latest=false
+          mapfile -d '' -t assets < <(find release -maxdepth 1 -type f -print0)
+          gh release create "hoplink-v$VERSION" "${assets[@]}" --target "$GITHUB_SHA" --title "HopLink v$VERSION" --generate-notes
