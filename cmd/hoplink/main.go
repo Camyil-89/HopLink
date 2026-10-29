@@ -1,5 +1,19 @@
 package main
 
-import "hoplink/internal/hoplink"
+import (
+	"flag"
+	"fmt"
+	"hoplink/internal/hoplink"
+)
 
-func main() { hoplink.Run() }
+var version = "dev"
+
+func main() {
+	showVersion := flag.Bool("version", false, "print version")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println("hoplink", version)
+		return
+	}
+	hoplink.Run()
+}

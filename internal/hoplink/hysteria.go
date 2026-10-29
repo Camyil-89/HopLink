@@ -86,9 +86,6 @@ func loadHy2Users(path string) ([]hy2User, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	if len(users) == 0 {
-		return nil, fmt.Errorf("файл пользователей %s не содержит пользователей", path)
-	}
 	return users, nil
 }
 

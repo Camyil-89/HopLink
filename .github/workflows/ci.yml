@@ -1,0 +1,216 @@
+name: CI and releases
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      hoplink: ${{ steps.changes.outputs.hoplink }}
+      desktop: ${{ steps.changes.outputs.desktop }}
+      hoplink_version: ${{ steps.changes.outputs.hoplink_version }}
+      desktop_version: ${{ steps.changes.outputs.desktop_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ '${{ github.event_name }}' == 'push' && '${{ github.ref_name }}' == 'main' ]]; then
+            base='${{ github.event.before }}'
+            if [[ "$base" == '0000000000000000000000000000000000000000' ]]; then
+              files=$(git ls-files)
+            else
+              files=$(git diff --name-only "$base" HEAD)
+            fi
+            hoplink=false
+            desktop=false
+            if grep -Eq '^(cmd/hoplink/|internal/hoplink/|go\.(mod|sum)$)' <<< "$files"; then hoplink=true; fi
+            if grep -Eq '^(cmd/desktop/|internal/desktop/|scripts/build-desktop\.mjs$|go\.(mod|sum)$)' <<< "$files"; then desktop=true; fi
+          else
+            hoplink=false
+            desktop=false
+          fi
+          next_version() {
+            local latest major minor patch
+            latest=$(git tag -l "$1-v*" | sed -nE "s/^$1-v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p" | sort -V | tail -n 1)
+            latest=${latest:-0.0.0}
+            IFS=. read -r major minor patch <<< "$latest"
+            printf '%s.%s.%s' "$major" "$minor" "$((patch + 1))"
+          }
+          {
+            echo "hoplink=$hoplink"
+            echo "desktop=$desktop"
+            echo "hoplink_version=$(next_version hoplink)"
+            echo "desktop_version=$(next_version desktop-hoplink)"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: versions
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            component: hoplink
+          - os: ubuntu-22.04
+            component: desktop-hoplink
+          - os: windows-2022
+            component: desktop-hoplink
+          - os: macos-15
+            component: desktop-hoplink
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install Linux desktop dependencies
+        if: matrix.component == 'desktop-hoplink' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev
+      - uses: actions/setup-node@v4
+        if: matrix.component == 'desktop-hoplink'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/desktop/frontend/package-lock.json
+      - name: Install Wails CLI
+        if: matrix.component == 'desktop-hoplink'
+        shell: pwsh
+        run: |
+          $wailsBin = Join-Path $env:RUNNER_TEMP 'wails-bin'
+          New-Item -ItemType Directory -Force $wailsBin | Out-Null
+          $env:GOBIN = $wailsBin
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content -Path $env:GITHUB_PATH -Value $wailsBin
+      - name: Test Go packages
+        if: matrix.component == 'hoplink'
+        run: go test ./cmd/hoplink ./internal/hoplink
+      - name: Build service
+        if: matrix.component == 'hoplink'
+        shell: pwsh
+        env:
+          HOPLINK_VERSION: ${{ needs.versions.outputs.hoplink_version }}
+        run: |
+          $suffix = if ($IsWindows) { '.exe' } else { '' }
+          $platformName = if ($IsMacOS) { 'Darwin' } else { $env:RUNNER_OS }
+          $binaryName = if ($IsLinux) { 'deploy/hoplink-Linux-amd64' } else { "deploy/hoplink-$platformName$suffix" }
+          go build -ldflags "-X main.version=$env:HOPLINK_VERSION" -o $binaryName ./cmd/hoplink
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($IsLinux) {
+            $env:GOARCH = 'arm64'
+            $env:CGO_ENABLED = '0'
+            go build -ldflags "-X main.version=$env:HOPLINK_VERSION" -o deploy/hoplink-Linux-arm64 ./cmd/hoplink
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Build desktop
+        if: matrix.component == 'desktop-hoplink'
+        env:
+          DESKTOP_VERSION: ${{ needs.versions.outputs.desktop_version }}
+        run: node scripts/build-desktop.mjs
+      - name: Package binary
+        shell: pwsh
+        env:
+          COMPONENT: ${{ matrix.component }}
+          HOPLINK_VERSION: ${{ needs.versions.outputs.hoplink_version }}
+          DESKTOP_VERSION: ${{ needs.versions.outputs.desktop_version }}
+        run: |
+          $platform = $env:RUNNER_OS.ToLowerInvariant()
+          if ($env:COMPONENT -eq 'hoplink') {
+            $source = if ($IsWindows) { 'deploy/hoplink-Windows.exe' } elseif ($IsLinux) { 'deploy/hoplink-Linux-amd64' } else { 'deploy/hoplink-Darwin' }
+            $version = $env:HOPLINK_VERSION
+          } else {
+            $source = if ($IsWindows) { 'deploy/HopLink.exe' } elseif ($IsMacOS) { 'deploy/bin/hoplink-desktop.app' } else { 'deploy/HopLink' }
+            $version = $env:DESKTOP_VERSION
+          }
+          if (-not (Test-Path -LiteralPath $source)) { throw "Expected build output missing: $source" }
+          New-Item -ItemType Directory -Force release | Out-Null
+          $archive = "release/$env:COMPONENT-v$version-$platform.zip"
+          $archivePath = Join-Path (Resolve-Path release).Path "$env:COMPONENT-v$version-$platform.zip"
+          if ($env:COMPONENT -eq 'desktop-hoplink') {
+            New-Item -ItemType Directory -Force package/deploy, package/cmd, package/internal | Out-Null
+            Copy-Item -LiteralPath $source -Destination package/deploy -Recurse
+            Copy-Item -LiteralPath cmd/hoplink -Destination package/cmd -Recurse
+            Copy-Item -LiteralPath internal/hoplink -Destination package/internal -Recurse
+            Copy-Item -LiteralPath go.mod,go.sum -Destination package
+            if ($IsWindows) {
+              Compress-Archive -Path package/* -DestinationPath $archive
+            } else {
+              Push-Location package
+              zip -qry $archivePath .
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              Pop-Location
+            }
+          } else {
+            if ($IsLinux) {
+              zip -j $archivePath $source deploy/hoplink-Linux-arm64
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            } elseif ($IsMacOS) {
+              zip -j $archivePath $source
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            } else {
+              Compress-Archive -LiteralPath $source -DestinationPath $archive
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.component }}-${{ runner.os }}
+          path: release/*.zip
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    needs: [versions, build]
+    strategy:
+      matrix:
+        include:
+          - component: hoplink
+            changed: hoplink
+            version: hoplink_version
+          - component: desktop-hoplink
+            changed: desktop
+            version: desktop_version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        if: needs.versions.outputs[matrix.changed] == 'true'
+        with:
+          pattern: ${{ matrix.component }}-*
+          path: release
+          merge-multiple: true
+      - name: Publish release
+        if: needs.versions.outputs[matrix.changed] == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.versions.outputs[matrix.version] }}
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          gh release create "$COMPONENT-v$VERSION" release/*.zip --target "$GITHUB_SHA" --title "$COMPONENT v$VERSION" --generate-notes
+          gh release delete "$COMPONENT-latest" --cleanup-tag --yes 2>/dev/null || true
+          mkdir -p latest
+          for file in release/*.zip; do
+            name=$(basename "$file")
+            cp "$file" "latest/${name/-v$VERSION/}"
+          done
+          gh release create "$COMPONENT-latest" latest/*.zip --target "$GITHUB_SHA" --title "$COMPONENT latest ($VERSION)" --notes "Latest $COMPONENT build: v$VERSION" --latest=false
