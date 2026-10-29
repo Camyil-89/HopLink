@@ -34,6 +34,10 @@ export function GetLinks() {
   return window['go']['desktop']['App']['GetLinks']();
 }
 
+export function GetRouteJournal(arg1, arg2, arg3, arg4) {
+  return window['go']['desktop']['App']['GetRouteJournal'](arg1, arg2, arg3, arg4);
+}
+
 export function GetState() {
   return window['go']['desktop']['App']['GetState']();
 }
@@ -58,8 +62,8 @@ export function SaveMap(arg1, arg2) {
   return window['go']['desktop']['App']['SaveMap'](arg1, arg2);
 }
 
-export function SaveRouteDraft(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {
-  return window['go']['desktop']['App']['SaveRouteDraft'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+export function SaveRouteDraft(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
+  return window['go']['desktop']['App']['SaveRouteDraft'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
 }
 
 export function SaveSecrets(arg1, arg2, arg3) {

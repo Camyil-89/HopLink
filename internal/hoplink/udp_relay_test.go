@@ -16,9 +16,9 @@ import (
 	hyserver "github.com/apernet/hysteria/core/v2/server"
 )
 
-func startTestRelay(t *testing.T, target string, limit int, idle time.Duration) *udpRelay {
+func startTestRelay(t *testing.T, target string, idle time.Duration) *udpRelay {
 	t.Helper()
-	r, err := newUDPRelay("127.0.0.1:0", target, limit, idle)
+	r, err := newUDPRelay("127.0.0.1:0", target, idle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,9 +62,9 @@ func udpEcho(t *testing.T) *net.UDPConn {
 	return c
 }
 
-func TestUDPRelayOpaquePacketsLimitsAndIdle(t *testing.T) {
+func TestUDPRelayOpaquePacketsIndependentSessionsAndIdle(t *testing.T) {
 	echo := udpEcho(t)
-	r := startTestRelay(t, echo.LocalAddr().String(), 1, time.Second)
+	r := startTestRelay(t, echo.LocalAddr().String(), time.Second)
 	peer, err := net.DialUDP("udp", nil, r.conn.LocalAddr().(*net.UDPAddr))
 	if err != nil {
 		t.Fatal(err)
@@ -92,12 +92,12 @@ func TestUDPRelayOpaquePacketsLimitsAndIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.Close()
-	_ = other.SetDeadline(time.Now().Add(100 * time.Millisecond))
+	_ = other.SetDeadline(time.Now().Add(3 * time.Second))
 	_, _ = other.Write(initial)
-	if _, err := other.Read(buf); err == nil {
-		t.Fatal("session limit was not enforced")
+	if n, err := other.Read(buf); err != nil || !bytes.Equal(buf[:n], initial) {
+		t.Fatalf("new session was not admitted: n=%d err=%v", n, err)
 	}
-	exchange([]byte{0x40, 9, 8, 7}) // A rejected source must not evict the existing one.
+	exchange([]byte{0x40, 9, 8, 7}) // A new source must not disrupt the existing one.
 	deadline := time.Now().Add(4 * time.Second)
 	for {
 		r.mu.Lock()
@@ -152,8 +152,8 @@ func TestEndToEndHysteriaThroughTwoUDPRelays(t *testing.T) {
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- srv.Serve() }()
 	t.Cleanup(func() { _ = srv.Close(); <-serverDone })
-	middle := startTestRelay(t, pc.LocalAddr().String(), 16, defaultRelayIdleTimeout)
-	entry := startTestRelay(t, middle.conn.LocalAddr().String(), 16, defaultRelayIdleTimeout)
+	middle := startTestRelay(t, pc.LocalAddr().String(), defaultRelayIdleTimeout)
+	entry := startTestRelay(t, middle.conn.LocalAddr().String(), defaultRelayIdleTimeout)
 	pin := sha256.Sum256(cert.Certificate[0])
 	connect := func(password string) hyclient.Client {
 		t.Helper()

@@ -14,8 +14,8 @@ export type Server = {
 
 export type User = { id: string; name: string; password: string; link: string; active?: boolean }
 export type Edge = { id: string; source: string; target: string }
-export type ServerServiceStatus = { serverId: string; running: boolean; version?: string; latestVersion?: string; versionCurrent?: boolean; error?: string }
-export type RouteServiceStatus = { routeId: string; running: number; total: number; servers: ServerServiceStatus[] }
+export type ServerServiceStatus = { serverId: string; running: boolean; version?: string; latestVersion?: string; versionCurrent?: boolean; error?: string; nextServerId?: string; nextLatencyMs?: number; nextPingError?: string }
+export type RouteServiceStatus = { routeId: string; running: number; total: number; servers: ServerServiceStatus[]; entryLatencyMs?: number; entryPingError?: string }
 
 export type Route = {
   id: string
@@ -31,6 +31,7 @@ export type Route = {
   chainKey: string
   certificate: string
   certificateKey: string
+  logLevel?: string
 }
 
 export type AppState = {
@@ -48,6 +49,7 @@ export type AppState = {
   chainKey: string
   certificate: string
   certificateKey: string
+  logLevel?: string
   knownHosts: Record<string, string>
 }
 
@@ -71,5 +73,6 @@ export const emptyState: AppState = {
   chainKey: '',
   certificate: '',
   certificateKey: '',
+  logLevel: 'warn',
   knownHosts: {},
 }

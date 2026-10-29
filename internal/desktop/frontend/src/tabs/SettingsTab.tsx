@@ -6,12 +6,17 @@ type Props = {
   showSecrets: boolean
   onChange: (patch: Partial<AppState>) => void
   onToggleSecrets: () => void
+  onGetJournal: () => void
 }
 
-export function SettingsTab({ state, showSecrets, onChange, onToggleSecrets }: Props) {
+export function SettingsTab({ state, showSecrets, onChange, onToggleSecrets, onGetJournal }: Props) {
   return (
     <section className="content-page route-settings">
       <div className="settings-grid">
+        <div className="table-card settings-card">
+          <div className="settings-section"><div className="section-icon"><Radio size={16} /></div><div><b>Журнал сервиса</b><small>Получить записи HopLink за выбранный период с выбранного узла.</small></div></div>
+          <button className="btn secondary" onClick={onGetJournal}>Получить журнал…</button>
+        </div>
         <div className="table-card settings-card">
           <div className="settings-section">
             <div className="section-icon"><Radio size={16} /></div>
@@ -23,6 +28,12 @@ export function SettingsTab({ state, showSecrets, onChange, onToggleSecrets }: P
             Домен входного узла (необязательно)
             <input value={state.entryDomain} onChange={event => onChange({ entryDomain: event.target.value })} placeholder="vpn.example.com" />
             <small className="field-hint">В ссылку подключения будет добавлен порт маршрута: {state.port}.</small>
+          </label>
+          <label className="field">Уровень логирования узлов
+            <select value={state.logLevel || 'warn'} onChange={event => onChange({ logLevel: event.target.value as typeof state.logLevel })}>
+              <option value="error">Только ошибки</option><option value="warn">Предупреждения</option><option value="info">Информация</option><option value="debug">Отладка</option><option value="trace">Подробная трассировка</option>
+            </select>
+            <small className="field-hint">Уровень применяется ко всем узлам маршрута при нажатии «Применить».</small>
           </label>
         </div>
 

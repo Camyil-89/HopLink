@@ -17,7 +17,6 @@ func Run() {
 	mode := flag.String("mode", "hy2-forward", "режим узла: udp-relay или hy2-forward (выход)")
 	capabilities := flag.Bool("capabilities", false, "вывести возможности бинарника и выйти")
 	forward := flag.String("f", "", "адрес следующего UDP узла для udp-relay")
-	relayMaxSessions := flag.Int("relay-max-sessions", defaultRelayMaxSessions, "максимум UDP-сессий реле")
 	relayIdleTimeout := flag.Duration("relay-idle-timeout", defaultRelayIdleTimeout, "время простоя UDP-сессии реле")
 	listen := flag.String("hy2-listen", ":22033", "адрес UDP прослушивания Hysteria2")
 	sni := flag.String("hy2-sni", defaultHy2SNI, "SNI Hysteria2")
@@ -42,7 +41,7 @@ func Run() {
 		if *forward == "" {
 			log.Fatal("для udp-relay укажите -f host:port следующего узла")
 		}
-		relay, err := newUDPRelay(*listen, parseHy2Forward(*forward), *relayMaxSessions, *relayIdleTimeout)
+		relay, err := newUDPRelay(*listen, parseHy2Forward(*forward), *relayIdleTimeout)
 		if err != nil {
 			log.Fatal(err)
 		}

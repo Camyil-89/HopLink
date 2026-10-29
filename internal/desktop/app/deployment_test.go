@@ -35,6 +35,27 @@ func TestRouteNodeArgsOnlyExitTerminatesTLS(t *testing.T) {
 	}
 }
 
+func TestRouteNodeArgsUseConfiguredLogLevelOnEveryNode(t *testing.T) {
+	cfg := AppConfig{Port: 22034, SNI: "example.com", LogLevel: "debug"}
+	order := []Server{{Host: "entry.example"}, {Host: "exit.example"}}
+	for i := range order {
+		args := routeNodeArgs(cfg, order, i, "/opt/route")
+		if args[4] != "debug" {
+			t.Fatalf("node %d log level = %q", i, args[4])
+		}
+	}
+}
+
+func TestJournalPeriodValidationAndUnitScope(t *testing.T) {
+	if validLogLevel("verbose") || !validLogLevel("trace") {
+		t.Fatal("log level validation failed")
+	}
+	_, unit := routeRemoteLayout("route-a", []Route{{ID: "route-a", Index: 2}})
+	if unit != "hoplink-2.service" {
+		t.Fatalf("unit = %q", unit)
+	}
+}
+
 func TestRouteLinksPreserveEntryAddressAndExistingCertificate(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

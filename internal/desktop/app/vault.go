@@ -199,6 +199,12 @@ func (a *App) prepareRoutesLocked() error {
 		if route.SNI == "" {
 			route.SNI = "www.cloudflare.com"
 		}
+		if route.LogLevel == "" {
+			route.LogLevel = "warn"
+		}
+		if !validLogLevel(route.LogLevel) {
+			route.LogLevel = "warn"
+		}
 		if route.ID == a.config.ActiveRouteID {
 			found = true
 		}
@@ -262,6 +268,7 @@ func (a *App) storeActiveRouteLocked() {
 		route.SNI, route.Port = a.config.SNI, a.config.Port
 		route.EntryDomain = a.config.EntryDomain
 		route.ChainKey, route.Certificate, route.CertificateKey = a.config.ChainKey, a.config.Certificate, a.config.CertificateKey
+		route.LogLevel = a.config.LogLevel
 		return
 	}
 }
@@ -278,6 +285,7 @@ func (a *App) loadActiveRouteLocked() {
 		a.config.SNI, a.config.Port = route.SNI, route.Port
 		a.config.EntryDomain = route.EntryDomain
 		a.config.ChainKey, a.config.Certificate, a.config.CertificateKey = route.ChainKey, route.Certificate, route.CertificateKey
+		a.config.LogLevel = route.LogLevel
 		a.links = linksForUsers(a.config.Users)
 		return
 	}
@@ -319,7 +327,7 @@ func (a *App) CreateRoute(name string) (AppConfig, error) {
 			nextIndex = existing.Index + 1
 		}
 	}
-	route := Route{ID: newID(), Name: name, Index: nextIndex, MapServers: []Server{}, DeployedServers: []Server{}, Users: []User{}, Edges: []Edge{}, SNI: a.config.SNI, Port: a.config.Port}
+	route := Route{ID: newID(), Name: name, Index: nextIndex, MapServers: []Server{}, DeployedServers: []Server{}, Users: []User{}, Edges: []Edge{}, SNI: a.config.SNI, Port: a.config.Port, LogLevel: "warn"}
 	a.config.Routes = append(a.config.Routes, route)
 	a.config.ActiveRouteID = route.ID
 	a.loadActiveRouteLocked()

@@ -19,3 +19,7 @@ func startDetachedCommand(command *exec.Cmd) error {
 	_ = command.Process.Release()
 	return nil
 }
+
+func hideCommandWindow(command *exec.Cmd) {
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+}

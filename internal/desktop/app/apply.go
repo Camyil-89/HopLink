@@ -60,6 +60,7 @@ func (a *App) apply(ctx context.Context) error {
 	if e := validateMap(servers, edges); e != nil {
 		return e
 	}
+	a.log(fmt.Sprintf("Проверяю карту маршрута: серверов %d, соединений %d.", len(servers), len(edges)))
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -67,6 +68,11 @@ func (a *App) apply(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
+	chainHosts := make([]string, len(order))
+	for i, server := range order {
+		chainHosts[i] = server.Host
+	}
+	a.log("Порядок цепочки: " + strings.Join(chainHosts, " → "))
 	for _, other := range cfg.Routes {
 		if other.ID == cfg.ActiveRouteID || other.Port != cfg.Port || len(other.DeployedServers) == 0 {
 			continue
@@ -106,6 +112,7 @@ func (a *App) apply(ctx context.Context) error {
 			activeUsers = append(activeUsers, user)
 		}
 	}
+	a.log(fmt.Sprintf("Активных пользователей: %d; порт маршрута: %d/UDP.", len(activeUsers), cfg.Port))
 	if cfg.ChainKey == "" || cfg.Certificate == "" {
 		if e = a.ensureSecrets(); e != nil {
 			return e
@@ -136,6 +143,7 @@ func (a *App) apply(ctx context.Context) error {
 		if e != nil {
 			return e
 		}
+		a.log(fmt.Sprintf("SSH подключён: %s; определяю пользователя и архитектуру…", s.Host))
 		clients[i] = c
 		identity, e := runRemoteContext(ctx, c, "id -un && uname -m", nil)
 		if e != nil {
@@ -155,6 +163,7 @@ func (a *App) apply(ctx context.Context) error {
 			return fmt.Errorf("%s: unsupported architecture %s", s.Host, machine)
 		}
 		if remoteUser != "root" {
+			a.log(fmt.Sprintf("Проверяю права установки на %s (пользователь %s)…", s.Host, remoteUser))
 			if _, sudoErr := runRemoteContext(ctx, c, "sudo -n true", nil); sudoErr != nil {
 				if _, e = runServerContext(ctx, c, s, "true", nil); e != nil {
 					return fmt.Errorf("%s: sudo preflight failed: %w", s.Host, e)
@@ -164,7 +173,7 @@ func (a *App) apply(ctx context.Context) error {
 		if _, e = runRemoteContext(ctx, c, "command -v systemctl >/dev/null && command -v base64 >/dev/null", nil); e != nil {
 			return fmt.Errorf("%s: systemctl/base64 preflight failed: %w", s.Host, e)
 		}
-		a.log(fmt.Sprintf("SSH ready: %s (%s, %s)", s.Host, remoteUser, archs[i]))
+		a.log(fmt.Sprintf("Сервер готов: %s; пользователь %s, Linux/%s, systemctl и base64 доступны.", s.Host, remoteUser, archs[i]))
 	}
 	bins := map[string]string{}
 	for _, arch := range archs {
@@ -179,6 +188,7 @@ func (a *App) apply(ctx context.Context) error {
 				return e
 			}
 			bins[arch] = p
+			a.log(fmt.Sprintf("Бинарник Linux/%s подготовлен; использую его для подходящих серверов.", arch))
 		}
 	}
 	if cfg.InstallSource == "github" {
@@ -193,6 +203,7 @@ func (a *App) apply(ctx context.Context) error {
 	for i, s := range order {
 		stage := "/tmp/hoplink-" + newID()
 		stages[i] = stage
+		a.log(fmt.Sprintf("Готовлю временный каталог и передаю бинарник на %s (%d/%d)…", s.Host, i+1, len(order)))
 		if _, e = runServerContext(ctx, clients[i], s, "mkdir -m 700 "+remote.ShellQuote(stage), nil); e != nil {
 			return e
 		}
@@ -207,6 +218,7 @@ func (a *App) apply(ctx context.Context) error {
 		if capabilityErr != nil || strings.TrimSpace(capabilities) != "udp-relay-v1" {
 			return fmt.Errorf("%s: бинарник не поддерживает UDP-реле; выберите сборку из текущих исходников или обновлённый релиз", s.Host)
 		}
+		a.log(fmt.Sprintf("Бинарник на %s проверен: поддержка UDP-реле подтверждена.", s.Host))
 	}
 	for _, old := range cfg.DeployedServers {
 		if len(oldLayouts) == 0 {
@@ -260,9 +272,10 @@ func (a *App) apply(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		a.log("\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044e \u0444\u0430\u0439\u043b\u044b \u043d\u0430 " + s.Host + "...")
+		a.log(fmt.Sprintf("Формирую конфигурацию узла %d/%d: %s…", i+1, len(order), s.Host))
 		stage := stages[i]
 		if i == len(order)-1 {
+			a.log(fmt.Sprintf("Подготавливаю учётные данные и TLS-сертификат на конечном узле %s…", s.Host))
 			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/shared.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.ChainKey+"\n")))); e != nil {
 				return e
 			}
@@ -297,7 +310,7 @@ func (a *App) apply(ctx context.Context) error {
 			}
 		}
 		install += "rm -rf -- " + remote.ShellQuote(stage) + "; systemctl daemon-reload; systemctl enable " + unitName
-		a.log("\u0423\u0441\u0442\u0430\u043d\u0430\u0432\u043b\u0438\u0432\u0430\u044e HopLink: " + s.Host + "...")
+		a.log(fmt.Sprintf("Устанавливаю бинарник и конфигурацию на %s; настраиваю systemd-службу %s…", s.Host, unitName))
 		if _, e = runServerContext(ctx, clients[i], s, install, nil); e != nil {
 			return fmt.Errorf("установка %s: %w", s.Host, e)
 		}
@@ -313,9 +326,9 @@ func (a *App) apply(ctx context.Context) error {
 			out, _ := runServerContext(ctx, c, s, "systemctl status "+unitName+" --no-pager -l; journalctl -u "+unitName+" -n 40 --no-pager", nil)
 			return fmt.Errorf("%s: сервис не запустился: %w\n%s", s.Host, e, out)
 		}
-		a.log("HopLink запущен: " + s.Host)
+		a.log("HopLink запущен и проверка systemd прошла успешно: " + s.Host)
 	}
-	a.log("\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u044e \u0437\u0430\u043f\u0443\u0441\u043a \u0446\u0435\u043f\u043e\u0447\u043a\u0438...")
+	a.log("Проверяю состояние всех служб после запуска…")
 	active := map[string]bool{}
 	for _, s := range order {
 		active[s.ID] = true
@@ -330,6 +343,7 @@ func (a *App) apply(ctx context.Context) error {
 		}
 		a.log("HopLink удалён: " + old.Host)
 	}
+	a.log("Сохраняю состояние маршрута и обновляю ссылки пользователей…")
 	a.mu.Lock()
 	a.config.ChainKey = cfg.ChainKey
 	a.config.Certificate = cfg.Certificate

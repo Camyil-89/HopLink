@@ -16,6 +16,14 @@ import (
 	"time"
 )
 
+func validLogLevel(level string) bool {
+	switch level {
+	case "trace", "debug", "info", "warn", "error":
+		return true
+	}
+	return false
+}
+
 func (a *App) SaveSettings(sni string, port int, entryDomain string) (AppConfig, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

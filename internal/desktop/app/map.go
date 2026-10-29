@@ -32,7 +32,7 @@ func (a *App) SaveMap(servers []Server, edges []Edge) (AppConfig, error) {
 	}
 	return a.config, nil
 }
-func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey string) (AppConfig, error) {
+func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey, logLevel string) (AppConfig, error) {
 	if err := validateMap(servers, edges); err != nil {
 		return a.GetState(), err
 	}
@@ -48,6 +48,9 @@ func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port in
 	}
 	if sni == "" {
 		sni = "www.cloudflare.com"
+	}
+	if !validLogLevel(logLevel) {
+		return a.GetState(), fmt.Errorf("неверный уровень логирования")
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -66,6 +69,7 @@ func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port in
 	a.config.Edges = append([]Edge{}, edges...)
 	a.config.SNI, a.config.Port, a.config.EntryDomain = sni, port, entryDomain
 	a.config.ChainKey, a.config.Certificate, a.config.CertificateKey = chainKey, cert, certKey
+	a.config.LogLevel = logLevel
 	return a.config, a.saveLocked()
 }
 func (a *App) clearRouteMigrationLayoutsLocked(routeID string) {

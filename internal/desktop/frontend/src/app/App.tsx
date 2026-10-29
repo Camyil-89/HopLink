@@ -16,6 +16,7 @@ import { DesktopSettingsTab } from '../tabs/DesktopSettingsTab'
 import { UnsavedChangesModal } from '../modals/UnsavedChangesModal'
 import { RouteModal } from '../modals/RouteModal'
 import { RemoveRouteServiceModal } from '../modals/RemoveRouteServiceModal'
+import { RouteJournalModal } from '../modals/RouteJournalModal'
 import { ClearMapModal } from '../modals/ClearMapModal'
 import { ServerModal, type ServerDraft } from '../modals/ServerModal'
 import { UserModal, type UserDraft } from '../modals/UserModal'
@@ -46,6 +47,7 @@ const parseHostApproval = (message: string) => {
 export default function App(){
  const [state,setState]=useState<State>(emptyState),[nodes,setNodes]=useState<FlowNode[]>([]),[edges,setEdges]=useState<FlowEdge[]>([]),[fitRevision,setFitRevision]=useState(0),[page,setPage]=useState('routes'),[routeTab,setRouteTab]=useState<'map'|'settings'|'users'>('map'),[collapsed,setCollapsed]=useState(false),[serverForm,setServerForm]=useState(false),[userForm,setUserForm]=useState(false),[editingServer,setEditingServer]=useState<string|null>(null),[editingUser,setEditingUser]=useState<string|null>(null),[draftServer,setDraftServer]=useState({name:'',host:'',sshPort:22,sshUser:'root',sshPassword:'',sshPrivateKey:'',sshKeyPassphrase:''}),[draftUser,setDraftUser]=useState({name:'',password:''}),[selected,setSelected]=useState<string[]>([]),[activeNode,setActiveNode]=useState<string|null>(null),[busy,setBusy]=useState(false),[logs,setLogs]=useState<string[]>([]),[progressOpen,setProgressOpen]=useState(false),[progressTitle,setProgressTitle]=useState('Ход синхронизации'),[progressCancelable,setProgressCancelable]=useState(true),[operationStatus,setOperationStatus]=useState('Ожидание запуска'),[cancelConfirm,setCancelConfirm]=useState(false),[links,setLinks]=useState<Record<string,string>>({}),[notice,setNotice]=useState(''),[search,setSearch]=useState(''),[hostApproval,setHostApproval]=useState<{host:string;fp:string}|null>(null),[resumeApply,setResumeApply]=useState(false),[showSecrets,setShowSecrets]=useState(false),[vaultStatus,setVaultStatus]=useState<VaultStatus|null>(null),[vaultPassword,setVaultPassword]=useState(''),[vaultMessage,setVaultMessage]=useState(''),[routeForm,setRouteForm]=useState(false),[routeName,setRouteName]=useState(''),[routeChosen,setRouteChosen]=useState(false),[removeRouteConfirm,setRemoveRouteConfirm]=useState(false),[unsavedOpen,setUnsavedOpen]=useState(false),[pendingNavigation,setPendingNavigation]=useState<(()=>void)|null>(null)
  const [routeStatuses,setRouteStatuses]=useState<Record<string,RouteServiceStatus>>({})
+ const [journalOpen,setJournalOpen]=useState(false)
  const [checkingRoutes,setCheckingRoutes]=useState(false)
  const [clearMapConfirm,setClearMapConfirm]=useState(false)
  const [operationResult,setOperationResult]=useState<'success'|'error'|'cancelled'|null>(null)
@@ -55,7 +57,8 @@ export default function App(){
  const routeDirty=routeChosen&&savedRouteSnapshot.current!==currentRouteSnapshot()
  const refreshLinks=async()=>{const latest=await api().GetLinks() as Record<string,string>;setLinks(latest);const current=(await api().GetState()) as State;const users=current.users.map(u=>({...u,link:latest[u.name]||''}));const saved=await api().SaveUsers(users);setState(st=>({...st,...saved}));return saved as State}
  const flowNodes=useMemo(()=>nodes.map(n=>{const incoming=edges.some(e=>e.target===n.id),outgoing=edges.some(e=>e.source===n.id);const role=!incoming?'entry':!outgoing?'exit':'relay';const serviceStatus=routeStatuses[state.activeRouteId]?.servers.find(server=>server.serverId===n.id);return {...n,data:{...n.data,role,hasIn:incoming,hasOut:outgoing,serviceStatus}}}),[nodes,edges,routeStatuses,state.activeRouteId])
- const installState=(s:State)=>{setState({...emptyState,...s});setNodes(initialNodes(s.mapServers||[]));setEdges((s.edges||[]).map(e=>({...e,type:'deletable',animated:true,style:{stroke:'#5770ee',strokeWidth:2},data:{onDelete:()=>setEdges(current=>current.filter(item=>item.id!==e.id))}})));savedRouteSnapshot.current=routeSnapshot(s.mapServers||[],s.edges||[],{sni:s.sni,port:s.port,entryDomain:s.entryDomain,chainKey:s.chainKey,certificate:s.certificate,certificateKey:s.certificateKey})}
+ const flowEdges=useMemo(()=>edges.map(edge=>{const link=routeStatuses[state.activeRouteId]?.servers.find(server=>server.serverId===edge.source&&server.nextServerId===edge.target);return {...edge,data:{...edge.data,pingKnown:!!link,pingMs:link?.nextLatencyMs,pingError:link?.nextPingError}}}),[edges,routeStatuses,state.activeRouteId])
+ const installState=(s:State)=>{setState({...emptyState,...s});setNodes(initialNodes(s.mapServers||[]));setEdges((s.edges||[]).map(e=>({...e,type:'deletable',animated:true,style:{stroke:'#5770ee',strokeWidth:2},data:{onDelete:()=>setEdges(current=>current.filter(item=>item.id!==e.id))}})));savedRouteSnapshot.current=routeSnapshot(s.mapServers||[],s.edges||[],{sni:s.sni,port:s.port,entryDomain:s.entryDomain,chainKey:s.chainKey,certificate:s.certificate,certificateKey:s.certificateKey,logLevel:s.logLevel})}
  const loadUnlockedState=async()=>{const s=await api().GetState() as State;installState(s);setVaultStatus({locked:false,needsSetup:false,hasData:true,error:''})}
  useEffect(()=>{api().GetVaultStatus().then(async(status:VaultStatus)=>{setVaultStatus(status);if(!status.locked&&(!status.needsSetup||!status.hasData))await loadUnlockedState()}).catch((e:any)=>setVaultMessage(String(e)));const off=EventsOn('deploy-log',(line:string)=>setLogs(x=>[...x,`${new Date().toLocaleTimeString()}  ${line}`]));return()=>off?.()},[])
  useEffect(()=>{logEndRef.current?.scrollIntoView({behavior:'smooth',block:'nearest'})},[logs])
@@ -75,7 +78,7 @@ export default function App(){
  const toggleUser=async(id:string,active:boolean)=>{const users=state.users.map(user=>user.id===id?{...user,active,link:active?user.link:''}:user);try{const saved=await api().SaveUsers(users);setState(st=>({...st,...saved}));setNotice(active?'Пользователь активирован. Примените маршрут, чтобы добавить его на сервер.':'Пользователь отключён. Примените маршрут, чтобы удалить его с сервера.');setTimeout(()=>setNotice(''),3500)}catch(e:any){await handleAppError(e)}}
  const deleteUser=async(id:string)=>{try{const saved=await api().SaveUsers(state.users.filter(u=>u.id!==id));setState(st=>({...st,...saved}));setNotice('Пользователь удалён');setTimeout(()=>setNotice(''),2200)}catch(e:any){await handleAppError(e)}}
  const toPersist=()=>{const sv=nodes.map(n=>{const s=n.data.server as Server;return {...s,x:n.position.x,y:n.position.y}});return {sv,ed:edges.map(e=>({id:e.id,source:e.source,target:e.target}))}}
- const persistRouteDraft=async()=>{const {sv,ed}=toPersist();const saved=await api().SaveRouteDraft(sv,ed,state.sni,state.port,state.entryDomain,state.chainKey,state.certificate,state.certificateKey) as State;setState({...state,...saved});setRouteStatuses(current=>{const next={...current};delete next[state.activeRouteId];return next});savedRouteSnapshot.current=routeSnapshot(sv,ed,state);return saved}
+ const persistRouteDraft=async()=>{const {sv,ed}=toPersist();const saved=await api().SaveRouteDraft(sv,ed,state.sni,state.port,state.entryDomain,state.chainKey,state.certificate,state.certificateKey,state.logLevel||'warn') as State;setState({...state,...saved});setRouteStatuses(current=>{const next={...current};delete next[state.activeRouteId];return next});savedRouteSnapshot.current=routeSnapshot(sv,ed,state);return saved}
  const saveRoute=async()=>{try{await persistRouteDraft();setNotice('Маршрут сохранён');setTimeout(()=>setNotice(''),2200)}catch(e:any){await handleAppError(e)}}
  const withUnsavedGuard=(action:()=>void)=>{if(routeDirty){setPendingNavigation(()=>action);setUnsavedOpen(true)}else action()}
  const discardAndContinue=async()=>{const action=pendingNavigation;setPendingNavigation(null);setUnsavedOpen(false);if(routeChosen){try{const saved=await api().SelectRoute(state.activeRouteId) as State;installState(saved)}catch(e:any){await handleAppError(e);return}}action?.()}
@@ -177,7 +180,7 @@ export default function App(){
           state={state}
           nodes={nodes}
           flowNodes={flowNodes}
-          edges={edges}
+          edges={flowEdges}
           servers={cardServers}
           search={search}
           dirty={routeDirty}
@@ -211,6 +214,7 @@ export default function App(){
           showSecrets={showSecrets}
           onChange={patch => setState(current => ({ ...current, ...patch }))}
           onToggleSecrets={() => setShowSecrets(value => !value)}
+          onGetJournal={() => setJournalOpen(true)}
         />}
         {page === 'routes' && routeChosen && routeTab === 'users' && <UsersTab
           state={state}
@@ -233,6 +237,7 @@ export default function App(){
       </main>
 
       {routeForm && <RouteModal name={routeName} onNameChange={setRouteName} onClose={() => setRouteForm(false)} onCreate={() => void createRoute()} />}
+      {journalOpen && <RouteJournalModal servers={state.deployedServers || []} onClose={() => setJournalOpen(false)} onLoad={(serverID, since, until) => api().GetRouteJournal(state.activeRouteId, serverID, since, until)} />}
       {clearMapConfirm && <ClearMapModal serverCount={nodes.length} connectionCount={edges.length} onCancel={() => setClearMapConfirm(false)} onConfirm={() => { setNodes([]); setEdges([]); setActiveNode(null); setClearMapConfirm(false) }} />}
       {removeRouteConfirm && <RemoveRouteServiceModal routeName={activeRouteName || 'Маршрут'} servers={state.deployedServers || []} onCancel={() => setRemoveRouteConfirm(false)} onConfirm={() => void removeRouteService(state.activeRouteId)} />}
       {serverForm && <ServerModal draft={draftServer} editing={!!editingServer} onChange={setDraftServer} onClose={() => setServerForm(false)} onSave={() => void addServer()} />}

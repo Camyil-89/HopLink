@@ -13,7 +13,7 @@ export function RoutesTab({ routes, statuses, checking, onCheck, onSelect, onCre
         <div className="route-list">
           {(routes ?? []).map(route => (
             <button key={route.id} className="route-option" onClick={() => onSelect(route.id)}>
-              <span><b>{route.name}</b><small>{route.mapServers?.length ?? 0} серверов · UDP {route.port}</small></span>
+              <span><b>{route.name}</b><small>{route.mapServers?.length ?? 0} серверов · UDP {route.port}</small>{statuses[route.id] && <small className={`route-entry-ping ${statuses[route.id].entryLatencyMs !== undefined ? 'measured' : 'unavailable'}`}>Пинг от вас до входа: {statuses[route.id].entryLatencyMs !== undefined ? `${statuses[route.id].entryLatencyMs!.toFixed(1)} мс` : 'ICMP недоступен'}</small>}</span>
               <span className="route-option-end">{statuses[route.id] && <span className={`route-status ${statuses[route.id].running === statuses[route.id].total && statuses[route.id].total > 0 ? 'running' : 'stopped'}`}>{statuses[route.id].running}/{statuses[route.id].total} работает</span>}<ArrowRight size={16} /></span>
             </button>
           ))}

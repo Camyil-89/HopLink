@@ -14,7 +14,11 @@ import (
 // Every hop except the last is an opaque UDP relay. Route credentials and the
 // existing pinned certificate belong only on the exit, preserving client URLs.
 func routeNodeArgs(cfg AppConfig, order []Server, index int, installDir string) []string {
-	args := []string{installDir + "/HopLink", "-hy2-listen", ":" + strconv.Itoa(cfg.Port), "-log-level", "warn"}
+	level := cfg.LogLevel
+	if level == "" {
+		level = "warn"
+	}
+	args := []string{installDir + "/HopLink", "-hy2-listen", ":" + strconv.Itoa(cfg.Port), "-log-level", level}
 	if index < len(order)-1 {
 		return append(args, "-mode", "udp-relay", "-f", net.JoinHostPort(order[index+1].Host, strconv.Itoa(cfg.Port)))
 	}

@@ -18,6 +18,8 @@ export function GetDesktopVersion():Promise<string>;
 
 export function GetLinks():Promise<Record<string, string>>;
 
+export function GetRouteJournal(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
+
 export function GetState():Promise<desktop.AppConfig>;
 
 export function GetVaultStatus():Promise<desktop.VaultStatus>;
@@ -30,7 +32,7 @@ export function RemoveRouteService(arg1:string):Promise<desktop.AppConfig>;
 
 export function SaveMap(arg1:Array<desktop.Server>,arg2:Array<desktop.Edge>):Promise<desktop.AppConfig>;
 
-export function SaveRouteDraft(arg1:Array<desktop.Server>,arg2:Array<desktop.Edge>,arg3:string,arg4:number,arg5:string,arg6:string,arg7:string,arg8:string):Promise<desktop.AppConfig>;
+export function SaveRouteDraft(arg1:Array<desktop.Server>,arg2:Array<desktop.Edge>,arg3:string,arg4:number,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string):Promise<desktop.AppConfig>;
 
 export function SaveSecrets(arg1:string,arg2:string,arg3:string):Promise<desktop.AppConfig>;
 

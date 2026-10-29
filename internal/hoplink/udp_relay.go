@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	defaultRelayMaxSessions = 1024
-	defaultRelayIdleTimeout = 2 * time.Minute
+	defaultRelayIdleTimeout = 30 * time.Second
 	relayQueueSize          = 8
 	maxUDPPacketSize        = 65535
 	relayMaxQueuedBytes     = 16 << 20
@@ -25,7 +24,6 @@ const (
 type udpRelay struct {
 	conn        *net.UDPConn
 	target      *net.UDPAddr
-	maxSessions int
 	idleTimeout time.Duration
 	mu          sync.Mutex
 	sessions    map[netip.AddrPort]*udpRelaySession
@@ -46,9 +44,9 @@ type udpRelaySession struct {
 	lastSeen atomic.Int64
 }
 
-func newUDPRelay(listen, forward string, maxSessions int, idleTimeout time.Duration) (*udpRelay, error) {
-	if maxSessions < 1 || idleTimeout < time.Second {
-		return nil, fmt.Errorf("relay requires positive session limit and idle timeout >= 1s")
+func newUDPRelay(listen, forward string, idleTimeout time.Duration) (*udpRelay, error) {
+	if idleTimeout < time.Second {
+		return nil, fmt.Errorf("relay requires idle timeout >= 1s")
 	}
 	target, err := net.ResolveUDPAddr("udp", forward)
 	if err != nil {
@@ -65,7 +63,7 @@ func newUDPRelay(listen, forward string, maxSessions int, idleTimeout time.Durat
 	if err != nil {
 		return nil, err
 	}
-	return &udpRelay{conn: conn, target: target, maxSessions: maxSessions, idleTimeout: idleTimeout, sessions: make(map[netip.AddrPort]*udpRelaySession)}, nil
+	return &udpRelay{conn: conn, target: target, idleTimeout: idleTimeout, sessions: make(map[netip.AddrPort]*udpRelaySession)}, nil
 }
 
 func (r *udpRelay) Serve(ctx context.Context) error {
@@ -138,7 +136,7 @@ func (r *udpRelay) session(peer netip.AddrPort, packet []byte) *udpRelaySession 
 	if s := r.sessions[peer]; s != nil {
 		return s
 	}
-	if len(r.sessions) >= r.maxSessions || !isQUICInitial(packet) {
+	if !isQUICInitial(packet) {
 		return nil
 	}
 	conn, err := net.DialUDP("udp", nil, r.target)
