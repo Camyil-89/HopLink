@@ -61,7 +61,7 @@ func (a *App) SaveSecrets(chainKey, cert, certKey string) (AppConfig, error) {
 	return a.config, a.saveLocked()
 }
 
-// generate/maintain a long-lived chain key and a stable self-signed entry certificate.
+// Maintain the existing route key and certificate; only the exit receives them.
 func (a *App) ensureSecrets() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
