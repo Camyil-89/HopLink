@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -33,6 +33,9 @@ for (const npmArgs of [['ci'], ['run', 'build']]) {
 if (!existsSync(path.join(frontendDir, 'dist', 'index.html'))) {
   throw new Error('Frontend build completed without producing internal/desktop/frontend/dist/index.html')
 }
+
+// Wails expects build:dir/bin to exist before it stages the application.
+mkdirSync(path.join(repoRoot, 'deploy', 'bin'), { recursive: true })
 
 const result = spawnSync(useGoRun ? 'go' : 'wails', args, {
   cwd: projectDir,
