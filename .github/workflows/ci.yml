@@ -25,6 +25,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Fetch all release tags
+        run: git fetch --tags origin
       - id: changes
         shell: bash
         run: |
@@ -174,9 +176,13 @@ jobs:
           } elseif ($IsWindows) {
             Copy-Item -LiteralPath $source -Destination 'release/desktop-hoplink-windows.exe'
           } elseif ($IsMacOS) {
+            $plist = Join-Path $source 'Contents/Info.plist'
+            $executableName = & /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' $plist
+            if ($LASTEXITCODE -ne 0) { throw 'Could not read CFBundleExecutable from the macOS app bundle' }
+            $macExecutable = Join-Path (Join-Path $source 'Contents/MacOS') $executableName
+            if (-not (Test-Path -LiteralPath $macExecutable)) { throw "Expected macOS executable missing: $macExecutable" }
+            Copy-Item -LiteralPath $macExecutable -Destination 'release/desktop-hoplink-darwin'
             Copy-Item -LiteralPath $source -Destination 'release/desktop-hoplink-darwin.app' -Recurse
-            tar -czf 'release/desktop-hoplink-darwin-app.tar.gz' -C deploy/bin hoplink-desktop.app
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } else {
             Copy-Item -LiteralPath $source -Destination 'release/desktop-hoplink-linux'
           }

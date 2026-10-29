@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Download, RefreshCw, Settings2 } from 'lucide-react'
 import * as AppApi from '../../wailsjs/go/desktop/App'
 
-type Update = { installed: string; latest: string; available: boolean; url: string }
+type Update = { installed: string; latest: string; available: boolean; url: string; digest: string }
 
 export function DesktopSettingsTab({ installSource, onInstallSourceChange }: {
   installSource: 'source' | 'github'
@@ -11,6 +11,7 @@ export function DesktopSettingsTab({ installSource, onInstallSourceChange }: {
   const [update, setUpdate] = useState<Update | null>(null)
   const [installed, setInstalled] = useState('…')
   const [checking, setChecking] = useState(false)
+  const [updating, setUpdating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -31,10 +32,16 @@ export function DesktopSettingsTab({ installSource, onInstallSourceChange }: {
     finally { setSaving(false) }
   }
 
-  const download = async () => {
-    setMessage('')
-    try { await AppApi.OpenDesktopUpdate(); setMessage('Архив обновления открыт в браузере. Распакуйте его поверх приложения после закрытия HopLink.') }
-    catch (error) { setMessage(`Не удалось открыть обновление: ${String(error)}`) }
+  const updateDesktop = async () => {
+    setUpdating(true)
+    setMessage('Скачиваю и подготавливаю обновление…')
+    try {
+      await AppApi.InstallDesktopUpdate()
+      setMessage('Обновление установлено. HopLink перезапустится автоматически.')
+    } catch (error) {
+      setMessage(`Не удалось установить обновление: ${String(error)}`)
+      setUpdating(false)
+    }
   }
 
   return <section className="content-page desktop-settings">
@@ -47,9 +54,9 @@ export function DesktopSettingsTab({ installSource, onInstallSourceChange }: {
       </div>
       <div className="desktop-settings-actions">
         <button className="btn" onClick={() => void check()} disabled={checking}><RefreshCw size={14} /> Проверить</button>
-        <button className="btn primary" onClick={() => void download()} disabled={!update?.available || checking}><Download size={14} /> Обновить</button>
+        <button className="btn primary" onClick={() => void updateDesktop()} disabled={!update?.available || checking || updating}><Download size={14} /> {updating ? 'Обновление…' : 'Обновить'}</button>
       </div>
-      <p>Обновление скачивается архивом. Закройте приложение перед заменой файлов; сохранённые настройки останутся рядом с исполняемым файлом.</p>
+      <p>Приложение скачает и проверит обновление, затем закроется, заменит свою программу и запустится снова. Настройки будут сохранены.</p>
     </div>
     <div className="desktop-settings-card">
       <h2>Установка HopLink на сервер</h2>

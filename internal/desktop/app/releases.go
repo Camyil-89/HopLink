@@ -16,8 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const releaseAPI = "https://api.github.com/repos/Camyil-89/HopLink/releases?per_page=100"
@@ -46,6 +44,7 @@ type DesktopUpdate struct {
 	Latest    string `json:"latest"`
 	Available bool   `json:"available"`
 	URL       string `json:"url"`
+	Digest    string `json:"digest"`
 }
 
 func fetchReleases(ctx context.Context) ([]githubRelease, error) {
@@ -145,29 +144,26 @@ func (a *App) CheckDesktopUpdate() (DesktopUpdate, error) {
 	if err != nil {
 		return result, err
 	}
-	platform := runtime.GOOS
-	asset, err := findAsset(release, fmt.Sprintf("desktop-hoplink-%s.zip", platform))
+	assetName := ""
+	switch runtime.GOOS {
+	case "windows":
+		assetName = "desktop-hoplink-windows.exe"
+	case "linux":
+		assetName = "desktop-hoplink-linux"
+	case "darwin":
+		assetName = "desktop-hoplink-darwin"
+	default:
+		return result, fmt.Errorf("автообновление не поддерживается на %s", runtime.GOOS)
+	}
+	asset, err := findAsset(release, assetName)
 	if err != nil {
 		return result, err
 	}
 	result.Latest = version
 	result.URL = asset.URL
+	result.Digest = asset.Digest
 	result.Available = DesktopVersion == "dev" || newerVersion(version, DesktopVersion)
 	return result, nil
-}
-
-// OpenDesktopUpdate downloads the matching release archive in the user's browser.
-// The running executable and encrypted settings are left in place.
-func (a *App) OpenDesktopUpdate() error {
-	update, err := a.CheckDesktopUpdate()
-	if err != nil {
-		return err
-	}
-	if !update.Available {
-		return fmt.Errorf("актуальная версия уже установлена")
-	}
-	wailsruntime.BrowserOpenURL(a.ctx, update.URL)
-	return nil
 }
 
 func (a *App) SetInstallSource(source string) error {
