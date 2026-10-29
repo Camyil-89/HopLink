@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"golang.org/x/crypto/ssh"
-	"hoplink/internal/desktop/remote"
+	"hoplink/internal/desktop/app/remote"
 	"net"
 	"strings"
 	"time"

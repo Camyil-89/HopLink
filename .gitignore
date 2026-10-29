@@ -37,6 +37,7 @@ __pycache__/
 
 # Wails desktop frontend build artifacts
 /internal/desktop/frontend/node_modules/
+/internal/desktop/app/assets/ui/dist/
 /internal/desktop/frontend/dist/
 /internal/desktop/frontend/*.tsbuildinfo
 /internal/desktop/frontend/package.json.md5
