@@ -37,7 +37,6 @@ if (!existsSync(path.join(frontendDir, 'dist', 'index.html'))) {
 const result = spawnSync(useGoRun ? 'go' : 'wails', args, {
   cwd: projectDir,
   stdio: 'inherit',
-  shell: process.platform === 'win32' && !useGoRun,
 })
 
 if (result.error) throw result.error

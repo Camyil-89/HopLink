@@ -103,7 +103,8 @@ jobs:
           HOPLINK_VERSION: ${{ needs.versions.outputs.hoplink_version }}
         run: |
           $suffix = if ($IsWindows) { '.exe' } else { '' }
-          $binaryName = if ($IsLinux) { 'deploy/hoplink-Linux-amd64' } else { "deploy/hoplink-$env:RUNNER_OS$suffix" }
+          $platformName = if ($IsMacOS) { 'Darwin' } else { $env:RUNNER_OS }
+          $binaryName = if ($IsLinux) { 'deploy/hoplink-Linux-amd64' } else { "deploy/hoplink-$platformName$suffix" }
           go build -ldflags "-X main.version=$env:HOPLINK_VERSION" -o $binaryName ./cmd/hoplink
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($IsLinux) {
