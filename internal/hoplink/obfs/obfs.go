@@ -1,4 +1,4 @@
-package hoplink
+package obfs
 
 import (
 	"crypto/rand"
@@ -11,18 +11,21 @@ import (
 	"sync"
 	"time"
 
+	"hoplink/internal/hoplink/log"
+
 	"golang.org/x/crypto/blake2b"
 )
 
 const (
-	salamanderSaltSize = 8
-	geckoMinPacketSize = 512
+	SalamanderSaltSize = 8
+	GeckoMinPacketSize = 512
 	geckoMaxPacketSize = 1200
+	maxUDPPacketSize   = 65535
 )
 
-// obfsPacketConn implements the Hysteria v2 Salamander and Gecko packet
-// wrappers at the UDP boundary. Intermediate relays keep these packets opaque.
-type obfsPacketConn struct {
+// PacketConn implements Hysteria v2 Salamander and Gecko at the UDP boundary.
+// Intermediate relays keep these packets opaque.
+type PacketConn struct {
 	pc       net.PacketConn
 	mode     string
 	password []byte
@@ -45,7 +48,7 @@ type geckoAssembly struct {
 	seen    int
 }
 
-func newObfsPacketConn(pc net.PacketConn, mode, password string) (net.PacketConn, error) {
+func NewPacketConn(pc net.PacketConn, mode, password string) (net.PacketConn, error) {
 	if mode == "" {
 		return pc, nil
 	}
@@ -55,10 +58,10 @@ func newObfsPacketConn(pc net.PacketConn, mode, password string) (net.PacketConn
 	if len([]byte(password)) < 4 {
 		return nil, errors.New("UDP obfuscation password must contain at least 4 bytes")
 	}
-	return &obfsPacketConn{pc: pc, mode: mode, password: []byte(password), pending: make(map[string]*geckoAssembly)}, nil
+	return &PacketConn{pc: pc, mode: mode, password: []byte(password), pending: make(map[string]*geckoAssembly)}, nil
 }
 
-func (c *obfsPacketConn) ReadFrom(out []byte) (int, net.Addr, error) {
+func (c *PacketConn) ReadFrom(out []byte) (int, net.Addr, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 	for {
@@ -71,29 +74,29 @@ func (c *obfsPacketConn) ReadFrom(out []byte) (int, net.Addr, error) {
 		n, addr, err := c.pc.ReadFrom(wire)
 		if err != nil {
 			if !errors.Is(err, net.ErrClosed) {
-				logWarnf("[HY2_UDP_READ_ERROR] peer=%s err=%v", addr, err)
+				log.Warnf("[HY2_UDP_READ_ERROR] peer=%s err=%v", addr, err)
 			}
 			return 0, addr, err
 		}
-		logTracef("[HY2_UDP_RX] peer=%s wire_bytes=%d obfs=%s", addr, n, c.mode)
+		log.Tracef("[HY2_UDP_RX] peer=%s wire_bytes=%d obfs=%s", addr, n, c.mode)
 		plain, ok := c.unmask(wire[:n])
 		if !ok {
-			logTracef("[HY2_UDP_DROP] peer=%s wire_bytes=%d reason=invalid_obfs_packet obfs=%s", addr, n, c.mode)
+			log.Tracef("[HY2_UDP_DROP] peer=%s wire_bytes=%d reason=invalid_obfs_packet obfs=%s", addr, n, c.mode)
 			continue
 		}
 		if c.mode == "gecko" {
 			plain, ok = c.ungecko(plain, addr)
 			if !ok {
-				logTracef("[HY2_UDP_FRAGMENT_PENDING_OR_DROP] peer=%s wire_bytes=%d obfs=%s", addr, n, c.mode)
+				log.Tracef("[HY2_UDP_FRAGMENT_PENDING_OR_DROP] peer=%s wire_bytes=%d obfs=%s", addr, n, c.mode)
 				continue
 			}
 		}
-		logTracef("[HY2_UDP_DEOBFS] peer=%s packet_bytes=%d obfs=%s", addr, len(plain), c.mode)
+		log.Tracef("[HY2_UDP_DEOBFS] peer=%s packet_bytes=%d obfs=%s", addr, len(plain), c.mode)
 		return copy(out, plain), addr, nil
 	}
 }
 
-func (c *obfsPacketConn) WriteTo(packet []byte, addr net.Addr) (int, error) {
+func (c *PacketConn) WriteTo(packet []byte, addr net.Addr) (int, error) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	if c.mode == "gecko" && len(packet) > 0 && packet[0]&0x80 != 0 {
@@ -105,35 +108,35 @@ func (c *obfsPacketConn) WriteTo(packet []byte, addr net.Addr) (int, error) {
 	}
 	_, err = c.pc.WriteTo(wire, addr)
 	if err != nil {
-		logWarnf("[HY2_UDP_WRITE_ERROR] peer=%s packet_bytes=%d wire_bytes=%d obfs=%s err=%v", addr, len(packet), len(wire), c.mode, err)
+		log.Warnf("[HY2_UDP_WRITE_ERROR] peer=%s packet_bytes=%d wire_bytes=%d obfs=%s err=%v", addr, len(packet), len(wire), c.mode, err)
 		return 0, err
 	}
-	logTracef("[HY2_UDP_TX] peer=%s packet_bytes=%d wire_bytes=%d obfs=%s", addr, len(packet), len(wire), c.mode)
+	log.Tracef("[HY2_UDP_TX] peer=%s packet_bytes=%d wire_bytes=%d obfs=%s", addr, len(packet), len(wire), c.mode)
 	return len(packet), nil
 }
 
-func (c *obfsPacketConn) mask(packet []byte) ([]byte, error) {
-	salt := make([]byte, salamanderSaltSize)
+func (c *PacketConn) mask(packet []byte) ([]byte, error) {
+	salt := make([]byte, SalamanderSaltSize)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
 		return nil, err
 	}
 	hash := salamanderHash(c.password, salt)
-	wire := make([]byte, salamanderSaltSize+len(packet))
+	wire := make([]byte, SalamanderSaltSize+len(packet))
 	copy(wire, salt)
 	for i, value := range packet {
-		wire[salamanderSaltSize+i] = value ^ hash[i%len(hash)]
+		wire[SalamanderSaltSize+i] = value ^ hash[i%len(hash)]
 	}
 	return wire, nil
 }
 
-func (c *obfsPacketConn) unmask(wire []byte) ([]byte, bool) {
-	if len(wire) <= salamanderSaltSize {
+func (c *PacketConn) unmask(wire []byte) ([]byte, bool) {
+	if len(wire) <= SalamanderSaltSize {
 		return nil, false
 	}
-	salt := wire[:salamanderSaltSize]
+	salt := wire[:SalamanderSaltSize]
 	hash := salamanderHash(c.password, salt)
-	plain := make([]byte, len(wire)-salamanderSaltSize)
-	for i, value := range wire[salamanderSaltSize:] {
+	plain := make([]byte, len(wire)-SalamanderSaltSize)
+	for i, value := range wire[SalamanderSaltSize:] {
 		plain[i] = value ^ hash[i%len(hash)]
 	}
 	return plain, true
@@ -147,8 +150,8 @@ func salamanderHash(password, salt []byte) []byte {
 	return hash[:]
 }
 
-func (c *obfsPacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
-	minCount := (len(packet) + geckoMaxPacketSize - salamanderSaltSize - 5 - 1) / (geckoMaxPacketSize - salamanderSaltSize - 5)
+func (c *PacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
+	minCount := (len(packet) + geckoMaxPacketSize - SalamanderSaltSize - 5 - 1) / (geckoMaxPacketSize - SalamanderSaltSize - 5)
 	if minCount < 2 {
 		minCount = 2
 	}
@@ -171,8 +174,8 @@ func (c *obfsPacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
 		if low < 1 {
 			low = 1
 		}
-		if high > geckoMaxPacketSize-salamanderSaltSize-5 {
-			high = geckoMaxPacketSize - salamanderSaltSize - 5
+		if high > geckoMaxPacketSize-SalamanderSaltSize-5 {
+			high = geckoMaxPacketSize - SalamanderSaltSize - 5
 		}
 		if high >= len(remaining)-(n-index-1) {
 			high = len(remaining) - (n - index - 1)
@@ -191,12 +194,12 @@ func (c *obfsPacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
 	c.msgID++
 	id := c.msgID
 	for index, chunk := range chunks {
-		frame := make([]byte, 5, geckoMaxPacketSize-salamanderSaltSize)
+		frame := make([]byte, 5, geckoMaxPacketSize-SalamanderSaltSize)
 		frame[0], frame[1] = 0x80, id
 		frame[2] = byte(index<<4 | n)
-		minWire := geckoMinPacketSize
-		if minWire < salamanderSaltSize+len(frame)+len(chunk) {
-			minWire = salamanderSaltSize + len(frame) + len(chunk)
+		minWire := GeckoMinPacketSize
+		if minWire < SalamanderSaltSize+len(frame)+len(chunk) {
+			minWire = SalamanderSaltSize + len(frame) + len(chunk)
 		}
 		maxWire := geckoMaxPacketSize
 		if minWire > maxWire {
@@ -206,7 +209,7 @@ func (c *obfsPacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		need := targetSize - salamanderSaltSize - len(frame) - len(chunk)
+		need := targetSize - SalamanderSaltSize - len(frame) - len(chunk)
 		binary.BigEndian.PutUint16(frame[3:5], uint16(need))
 		padding := make([]byte, need)
 		if _, err := io.ReadFull(rand.Reader, padding); err != nil {
@@ -236,7 +239,7 @@ func randomBetween(min, max int) (int, error) {
 	return min + int(value.Int64()), nil
 }
 
-func (c *obfsPacketConn) ungecko(packet []byte, addr net.Addr) ([]byte, bool) {
+func (c *PacketConn) ungecko(packet []byte, addr net.Addr) ([]byte, bool) {
 	if len(packet) == 0 || packet[0]&0x80 == 0 {
 		return packet, len(packet) != 0
 	}
@@ -281,8 +284,8 @@ func (c *obfsPacketConn) ungecko(packet []byte, addr net.Addr) ([]byte, bool) {
 	return complete, len(complete) != 0
 }
 
-func (c *obfsPacketConn) Close() error                       { return c.pc.Close() }
-func (c *obfsPacketConn) LocalAddr() net.Addr                { return c.pc.LocalAddr() }
-func (c *obfsPacketConn) SetDeadline(t time.Time) error      { return c.pc.SetDeadline(t) }
-func (c *obfsPacketConn) SetReadDeadline(t time.Time) error  { return c.pc.SetReadDeadline(t) }
-func (c *obfsPacketConn) SetWriteDeadline(t time.Time) error { return c.pc.SetWriteDeadline(t) }
+func (c *PacketConn) Close() error                       { return c.pc.Close() }
+func (c *PacketConn) LocalAddr() net.Addr                { return c.pc.LocalAddr() }
+func (c *PacketConn) SetDeadline(t time.Time) error      { return c.pc.SetDeadline(t) }
+func (c *PacketConn) SetReadDeadline(t time.Time) error  { return c.pc.SetReadDeadline(t) }
+func (c *PacketConn) SetWriteDeadline(t time.Time) error { return c.pc.SetWriteDeadline(t) }

@@ -121,6 +121,13 @@ func (a *App) apply(ctx context.Context) error {
 		cfg = a.config
 		a.mu.Unlock()
 	}
+	a.mu.Lock()
+	if e = a.ensureRelayTransportSecretsLocked(); e != nil {
+		a.mu.Unlock()
+		return e
+	}
+	cfg = a.config
+	a.mu.Unlock()
 	links, e := routeUserLinks(cfg, order[0], activeUsers)
 	if e != nil {
 		return e
@@ -215,8 +222,14 @@ func (a *App) apply(ctx context.Context) error {
 			return fmt.Errorf("загрузка бинарника на %s: %w", s.Host, e)
 		}
 		capabilities, capabilityErr := runServerContext(ctx, clients[i], s, "chmod 700 "+remote.ShellQuote(stage+"/HopLink")+" && "+remote.ShellQuote(stage+"/HopLink")+" -capabilities", nil)
-		if capabilityErr != nil || strings.TrimSpace(capabilities) != "udp-relay-v1" {
+		if capabilityErr != nil || !strings.Contains(capabilities, "udp-relay-v1") {
 			return fmt.Errorf("%s: бинарник не поддерживает UDP-реле; выберите сборку из текущих исходников или обновлённый релиз", s.Host)
+		}
+		if strings.TrimSpace(cfg.RelayTransport) == "ssh" && !strings.Contains(capabilities, "ssh-udp-relay-v1") {
+			return fmt.Errorf("%s: бинарник не поддерживает SSH-транспорт реле; выберите сборку из текущих исходников", s.Host)
+		}
+		if strings.TrimSpace(cfg.RelayTransport) == "ws" && !strings.Contains(capabilities, "ws-udp-relay-v1") {
+			return fmt.Errorf("%s: бинарник не поддерживает WebSocket-транспорт реле; выберите сборку из текущих исходников", s.Host)
 		}
 		a.log(fmt.Sprintf("Бинарник на %s проверен: поддержка UDP-реле подтверждена.", s.Host))
 	}
@@ -274,6 +287,36 @@ func (a *App) apply(ctx context.Context) error {
 		}
 		a.log(fmt.Sprintf("Формирую конфигурацию узла %d/%d: %s…", i+1, len(order), s.Host))
 		stage := stages[i]
+		transport := cfg.RelayTransport
+		if transport == "" {
+			transport = "udp"
+		}
+		if transport == "ssh" {
+			if i > 0 {
+				if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/relay_ssh_host.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.RelayTransportHostKey)))); e != nil {
+					return e
+				}
+				if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/relay_transport_auth"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.RelayTransportClientPub)))); e != nil {
+					return e
+				}
+			}
+			if i < len(order)-1 {
+				if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/relay_transport_client.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.RelayTransportClientKey)))); e != nil {
+					return e
+				}
+				if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/relay_transport_next_host.pub"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.RelayTransportHostPub)))); e != nil {
+					return e
+				}
+			}
+		}
+		if transport == "ws" {
+			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/hy2-server.crt"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.Certificate)))); e != nil {
+				return e
+			}
+			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/hy2-server.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.CertificateKey)))); e != nil {
+				return e
+			}
+		}
 		if i == len(order)-1 {
 			a.log(fmt.Sprintf("Подготавливаю учётные данные и TLS-сертификат на конечном узле %s…", s.Host))
 			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/shared.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.ChainKey+"\n")))); e != nil {
@@ -314,10 +357,27 @@ func (a *App) apply(ctx context.Context) error {
 				install += "rm -f -- " + remote.ShellQuote(installDir+"/obfs.key") + "; "
 			}
 		} else {
-			// Remove obsolete credentials from nodes that used to terminate TLS.
-			for _, name := range []string{"shared.key", "users.txt", "hy2-server.crt", "hy2-server.key", "obfs.key"} {
+			removeNames := []string{"shared.key", "users.txt", "obfs.key", "relay_ssh_host.key", "relay_transport_auth", "relay_transport_client.key", "relay_transport_next_host.pub"}
+			if transport != "ws" {
+				removeNames = append(removeNames, "hy2-server.crt", "hy2-server.key")
+			}
+			for _, name := range removeNames {
 				install += "rm -f -- " + remote.ShellQuote(installDir+"/"+name) + "; "
 			}
+		}
+		if transport == "ws" {
+			install += "install -m 644 " + remote.ShellQuote(stage+"/hy2-server.crt") + " " + remote.ShellQuote(installDir+"/hy2-server.crt") + "; install -m 600 " + remote.ShellQuote(stage+"/hy2-server.key") + " " + remote.ShellQuote(installDir+"/hy2-server.key") + "; "
+		}
+		if transport == "ssh" {
+			if i > 0 {
+				install += "install -m 600 " + remote.ShellQuote(stage+"/relay_ssh_host.key") + " " + remote.ShellQuote(installDir+"/relay_ssh_host.key") + "; install -m 600 " + remote.ShellQuote(stage+"/relay_transport_auth") + " " + remote.ShellQuote(installDir+"/relay_transport_auth") + "; "
+			}
+			if i < len(order)-1 {
+				install += "install -m 600 " + remote.ShellQuote(stage+"/relay_transport_client.key") + " " + remote.ShellQuote(installDir+"/relay_transport_client.key") + "; install -m 644 " + remote.ShellQuote(stage+"/relay_transport_next_host.pub") + " " + remote.ShellQuote(installDir+"/relay_transport_next_host.pub") + "; "
+			}
+		}
+		if i == len(order)-1 && transport == "ssh" && len(order) > 1 {
+			install += "install -m 600 " + remote.ShellQuote(stage+"/relay_ssh_host.key") + " " + remote.ShellQuote(installDir+"/relay_ssh_host.key") + "; install -m 600 " + remote.ShellQuote(stage+"/relay_transport_auth") + " " + remote.ShellQuote(installDir+"/relay_transport_auth") + "; "
 		}
 		install += "rm -rf -- " + remote.ShellQuote(stage) + "; systemctl daemon-reload; systemctl enable " + unitName
 		a.log(fmt.Sprintf("Устанавливаю бинарник и конфигурацию на %s; настраиваю systemd-службу %s…", s.Host, unitName))

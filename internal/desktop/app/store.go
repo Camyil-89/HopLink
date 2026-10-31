@@ -6,7 +6,13 @@ import (
 	"os"
 )
 
-func (a *App) GetState() AppConfig { a.mu.Lock(); defer a.mu.Unlock(); return a.config }
+func (a *App) GetState() AppConfig {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cfg := a.config
+	cfg.CertificateLifetime = formatCertificateLifetime(cfg.Certificate)
+	return cfg
+}
 func (a *App) GetVaultStatus() VaultStatus {
 	a.mu.Lock()
 	defer a.mu.Unlock()

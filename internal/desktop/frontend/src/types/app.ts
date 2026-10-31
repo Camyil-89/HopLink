@@ -31,9 +31,11 @@ export type Route = {
   chainKey: string
   certificate: string
   certificateKey: string
+  certificateLifetime?: string
   logLevel?: string
   obfsType?: string
   obfsPassword?: string
+  relayTransport?: string
 }
 
 export type AppState = {
@@ -51,9 +53,11 @@ export type AppState = {
   chainKey: string
   certificate: string
   certificateKey: string
+  certificateLifetime?: string
   logLevel?: string
   obfsType?: string
   obfsPassword?: string
+  relayTransport?: string
   knownHosts: Record<string, string>
 }
 
@@ -80,5 +84,6 @@ export const emptyState: AppState = {
   logLevel: 'warn',
   obfsType: '',
   obfsPassword: '',
+  relayTransport: 'udp',
   knownHosts: {},
 }

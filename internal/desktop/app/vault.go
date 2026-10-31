@@ -208,6 +208,12 @@ func (a *App) prepareRoutesLocked() error {
 		if !validLogLevel(route.LogLevel) {
 			route.LogLevel = "warn"
 		}
+		if !validRelayTransport(route.RelayTransport) {
+			route.RelayTransport = "udp"
+		}
+		if route.RelayTransport == "" {
+			route.RelayTransport = "udp"
+		}
 		if route.ID == a.config.ActiveRouteID {
 			found = true
 		}
@@ -275,6 +281,11 @@ func (a *App) storeActiveRouteLocked() {
 		route.ChainKey, route.Certificate, route.CertificateKey = a.config.ChainKey, a.config.Certificate, a.config.CertificateKey
 		route.LogLevel = a.config.LogLevel
 		route.ObfsType, route.ObfsPassword = a.config.ObfsType, a.config.ObfsPassword
+		route.RelayTransport = a.config.RelayTransport
+		route.RelayTransportClientKey = a.config.RelayTransportClientKey
+		route.RelayTransportClientPub = a.config.RelayTransportClientPub
+		route.RelayTransportHostKey = a.config.RelayTransportHostKey
+		route.RelayTransportHostPub = a.config.RelayTransportHostPub
 		return
 	}
 }
@@ -293,6 +304,14 @@ func (a *App) loadActiveRouteLocked() {
 		a.config.ChainKey, a.config.Certificate, a.config.CertificateKey = route.ChainKey, route.Certificate, route.CertificateKey
 		a.config.LogLevel = route.LogLevel
 		a.config.ObfsType, a.config.ObfsPassword = route.ObfsType, route.ObfsPassword
+		a.config.RelayTransport = route.RelayTransport
+		a.config.RelayTransportClientKey = route.RelayTransportClientKey
+		a.config.RelayTransportClientPub = route.RelayTransportClientPub
+		a.config.RelayTransportHostKey = route.RelayTransportHostKey
+		a.config.RelayTransportHostPub = route.RelayTransportHostPub
+		if a.config.RelayTransport == "" {
+			a.config.RelayTransport = "udp"
+		}
 		a.links = linksForUsers(a.config.Users)
 		return
 	}

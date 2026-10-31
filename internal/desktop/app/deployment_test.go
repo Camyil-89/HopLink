@@ -16,6 +16,33 @@ import (
 	"time"
 )
 
+func TestRouteNodeArgsSSHTransport(t *testing.T) {
+	cfg := AppConfig{Port: 22033, SNI: "example.com", RelayTransport: "ssh"}
+	order := []Server{{Host: "entry.example"}, {Host: "middle.example"}, {Host: "exit.example"}}
+	entry := routeNodeArgs(cfg, order, 0, "/opt/route")
+	if !containsAll(entry, "-relay-transport", "ssh", "-relay-ssh-next", "middle.example:22034") {
+		t.Fatalf("entry args = %v", entry)
+	}
+	middle := routeNodeArgs(cfg, order, 1, "/opt/route")
+	if !containsAll(middle, "-relay-ssh-listen", ":22034", "-relay-ssh-next", "exit.example:22034") {
+		t.Fatalf("middle args = %v", middle)
+	}
+	exit := routeNodeArgs(cfg, order, 2, "/opt/route")
+	if !containsAll(exit, "-mode", "hy2-forward", "-relay-ssh-listen", ":22034") {
+		t.Fatalf("exit args = %v", exit)
+	}
+}
+
+func containsAll(args []string, needles ...string) bool {
+	joined := strings.Join(args, " ")
+	for _, needle := range needles {
+		if !strings.Contains(joined, needle) {
+			return false
+		}
+	}
+	return true
+}
+
 func TestRouteNodeArgsOnlyExitTerminatesTLS(t *testing.T) {
 	cfg := AppConfig{Port: 22033, SNI: "example.com"}
 	order := []Server{{Host: "entry.example"}, {Host: "middle.example"}, {Host: "exit.example"}}

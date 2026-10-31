@@ -32,7 +32,7 @@ func (a *App) SaveMap(servers []Server, edges []Edge) (AppConfig, error) {
 	}
 	return a.config, nil
 }
-func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey, logLevel, obfsType, obfsPassword string) (AppConfig, error) {
+func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey, logLevel, obfsType, obfsPassword, relayTransport string) (AppConfig, error) {
 	if err := validateMap(servers, edges); err != nil {
 		return a.GetState(), err
 	}
@@ -59,6 +59,13 @@ func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port in
 	if obfsType == "" {
 		obfsPassword = ""
 	}
+	relayTransport = strings.TrimSpace(strings.ToLower(relayTransport))
+	if relayTransport == "" {
+		relayTransport = "udp"
+	}
+	if !validRelayTransport(relayTransport) {
+		return a.GetState(), fmt.Errorf("неверный транспорт между реле")
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.config.MapServers = append([]Server{}, servers...)
@@ -78,6 +85,7 @@ func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port in
 	a.config.ChainKey, a.config.Certificate, a.config.CertificateKey = chainKey, cert, certKey
 	a.config.LogLevel = logLevel
 	a.config.ObfsType, a.config.ObfsPassword = obfsType, obfsPassword
+	a.config.RelayTransport = relayTransport
 	return a.config, a.saveLocked()
 }
 func (a *App) clearRouteMigrationLayoutsLocked(routeID string) {
