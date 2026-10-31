@@ -56,9 +56,15 @@ type AppConfig struct {
 	ChainKey        string            `json:"chainKey"`
 	Certificate     string            `json:"certificate"`
 	CertificateKey  string            `json:"certificateKey"`
+	CertificateLifetime string        `json:"certificateLifetime,omitempty"`
 	LogLevel        string            `json:"logLevel,omitempty"`
 	ObfsType        string            `json:"obfsType,omitempty"`
 	ObfsPassword    string            `json:"obfsPassword,omitempty"`
+	RelayTransport  string            `json:"relayTransport,omitempty"`
+	RelayTransportClientKey string    `json:"relayTransportClientKey,omitempty"`
+	RelayTransportClientPub string    `json:"relayTransportClientPub,omitempty"`
+	RelayTransportHostKey   string    `json:"relayTransportHostKey,omitempty"`
+	RelayTransportHostPub   string    `json:"relayTransportHostPub,omitempty"`
 	KnownHosts      map[string]string `json:"knownHosts"`
 }
 type Route struct {
@@ -80,6 +86,11 @@ type Route struct {
 	LogLevel        string   `json:"logLevel,omitempty"`
 	ObfsType        string   `json:"obfsType,omitempty"`
 	ObfsPassword    string   `json:"obfsPassword,omitempty"`
+	RelayTransport  string   `json:"relayTransport,omitempty"`
+	RelayTransportClientKey string `json:"relayTransportClientKey,omitempty"`
+	RelayTransportClientPub string `json:"relayTransportClientPub,omitempty"`
+	RelayTransportHostKey   string `json:"relayTransportHostKey,omitempty"`
+	RelayTransportHostPub   string `json:"relayTransportHostPub,omitempty"`
 }
 type MapState struct {
 	Servers []Server `json:"servers"`

@@ -1,13 +1,17 @@
-package hoplink
+//go:build integration
+
+package relay
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"io"
 	"net"
 	"testing"
 	"time"
+
+	"hoplink/internal/hoplink/hysteria"
+	"hoplink/internal/hoplink/obfs"
 
 	hyclient "github.com/apernet/hysteria/core/v2/client"
 	hyserver "github.com/apernet/hysteria/core/v2/server"
@@ -16,78 +20,18 @@ import (
 type obfsClientConnFactory struct{ mode, password string }
 
 func (f obfsClientConnFactory) New(addr net.Addr) (net.PacketConn, error) {
-	pc, err := net.ListenPacket("udp", "")
+	pc, err := net.ListenPacket("udp", addr.String())
 	if err != nil {
 		return nil, err
 	}
-	wrapped, err := newObfsPacketConn(pc, f.mode, f.password)
-	if err != nil {
-		_ = pc.Close()
-		return nil, err
-	}
-	return wrapped, nil
-}
-
-func TestObfsPacketConnRoundTrip(t *testing.T) {
-	for _, mode := range []string{"salamander", "gecko"} {
-		t.Run(mode, func(t *testing.T) {
-			serverRaw, err := net.ListenPacket("udp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer serverRaw.Close()
-			server, err := newObfsPacketConn(serverRaw, mode, "same-test-mask-password")
-			if err != nil {
-				t.Fatal(err)
-			}
-			clientRaw, err := net.ListenPacket("udp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer clientRaw.Close()
-			client, err := newObfsPacketConn(clientRaw, mode, "same-test-mask-password")
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, size := range []int{1200, 24} {
-				want := bytes.Repeat([]byte{0x5a}, size)
-				want[0] = 0xc0 // QUIC long-header packet, fragmented in Gecko mode.
-				if _, err = client.WriteTo(want, serverRaw.LocalAddr()); err != nil {
-					t.Fatal(err)
-				}
-				_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
-				got := make([]byte, 1500)
-				n, from, err := server.ReadFrom(got)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if from == nil || !bytes.Equal(got[:n], want) {
-					t.Fatalf("round trip mismatch: len=%d from=%v", n, from)
-				}
-			}
-		})
-	}
-}
-
-func TestObfsPacketConnRequiresValidModeAndPassword(t *testing.T) {
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pc.Close()
-	if _, err := newObfsPacketConn(pc, "unknown", "long-enough"); err == nil {
-		t.Fatal("expected unsupported mode error")
-	}
-	if _, err := newObfsPacketConn(pc, "salamander", "abc"); err == nil {
-		t.Fatal("expected short password error")
-	}
+	return obfs.NewPacketConn(pc, f.mode, f.password)
 }
 
 func TestHysteriaObfsThroughUDPRelays(t *testing.T) {
 	for _, mode := range []string{"salamander", "gecko"} {
 		t.Run(mode, func(t *testing.T) {
 			const password = "same-obfs-password"
-			certPEM, keyPEM, err := generateHy2Certificate("localhost")
+			certPEM, keyPEM, err := hysteria.GenerateCertificate("localhost")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -99,11 +43,11 @@ func TestHysteriaObfsThroughUDPRelays(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			serverPC, err := newObfsPacketConn(raw, mode, password)
+			serverPC, err := obfs.NewPacketConn(raw, mode, password)
 			if err != nil {
 				t.Fatal(err)
 			}
-			cfg := exitServerConfig(serverPC, []tls.Certificate{cert}, "chain-key", nil)
+			cfg := hysteria.ExitServerConfig(serverPC, []tls.Certificate{cert}, "chain-key", nil)
 			srv, err := hyserver.NewServer(cfg)
 			if err != nil {
 				_ = raw.Close()
@@ -113,9 +57,9 @@ func TestHysteriaObfsThroughUDPRelays(t *testing.T) {
 			go func() { serverDone <- srv.Serve() }()
 			t.Cleanup(func() { _ = srv.Close(); <-serverDone })
 			middle := startObfsTestRelay(t, raw.LocalAddr().String(), mode)
-			entry := startObfsTestRelay(t, middle.conn.LocalAddr().String(), mode)
+			entry := startObfsTestRelay(t, middle.LocalAddr().String(), mode)
 			client, _, err := hyclient.NewClient(&hyclient.Config{
-				ServerAddr: entry.conn.LocalAddr(), Auth: "chain-key",
+				ServerAddr: entry.LocalAddr(), Auth: "chain-key",
 				ConnFactory:     obfsClientConnFactory{mode: mode, password: password},
 				TLSConfig:       hyclient.TLSConfig{ServerName: "localhost", InsecureSkipVerify: true},
 				BandwidthConfig: hyclient.BandwidthConfig{MaxRx: 1_000_000_000},
@@ -153,9 +97,9 @@ func TestHysteriaObfsThroughUDPRelays(t *testing.T) {
 	}
 }
 
-func startObfsTestRelay(t *testing.T, target, mode string) *udpRelay {
+func startObfsTestRelay(t *testing.T, target, mode string) *Relay {
 	t.Helper()
-	r, err := newUDPRelayWithObfs("127.0.0.1:0", target, defaultRelayIdleTimeout, mode)
+	r, err := NewWithObfs("127.0.0.1:0", target, DefaultIdleTimeout, mode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +113,7 @@ func startObfsTestRelay(t *testing.T, target, mode string) *udpRelay {
 			if err != nil {
 				t.Error(err)
 			}
-		case <-time.After(5 * time.Second):
+		case <-time.After(2 * time.Second):
 			t.Error("obfuscated relay failed to shut down")
 		}
 	})

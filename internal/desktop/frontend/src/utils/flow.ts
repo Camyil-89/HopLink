@@ -11,7 +11,7 @@ export const initialNodes = (servers: Server[]): Node[] => servers.map(server =>
 export function routeSnapshot(
   servers: Server[],
   connections: RouteEdge[],
-  settings: { sni: string; port: number; entryDomain: string; chainKey: string; certificate: string; certificateKey: string; logLevel?: string; obfsType?: string; obfsPassword?: string },
+  settings: { sni: string; port: number; entryDomain: string; chainKey: string; certificate: string; certificateKey: string; logLevel?: string; obfsType?: string; obfsPassword?: string; relayTransport?: string },
 ) {
   return JSON.stringify({
     nodes: servers.map(server => ({ id: server.id, x: Math.round((server.x ?? 0) / 20) * 20, y: Math.round((server.y ?? 0) / 20) * 20 })).sort((a, b) => a.id.localeCompare(b.id)),
@@ -26,6 +26,7 @@ export function routeSnapshot(
       logLevel: settings.logLevel || 'warn',
       obfsType: settings.obfsType || '',
       obfsPassword: settings.obfsPassword || '',
+      relayTransport: settings.relayTransport || 'udp',
     },
   })
 }

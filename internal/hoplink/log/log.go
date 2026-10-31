@@ -1,4 +1,4 @@
-package hoplink
+package log
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ const (
 
 var currentLogLevel atomic.Int32 // zero means info, including before flag parsing
 
-func setLogLevel(name string) error {
+func SetLevel(name string) error {
 	var level int32
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "trace":
@@ -55,8 +55,8 @@ func logAt(level int32, format string, args ...any) {
 	log.Printf("["+label+"] "+format, args...)
 }
 
-func logDebugf(format string, args ...any) { logAt(levelDebug, format, args...) }
-func logTracef(format string, args ...any) { logAt(levelTrace, format, args...) }
-func logInfof(format string, args ...any)  { logAt(levelInfo, format, args...) }
-func logWarnf(format string, args ...any)  { logAt(levelWarn, format, args...) }
-func logErrorf(format string, args ...any) { logAt(levelError, format, args...) }
+func Debugf(format string, args ...any) { logAt(levelDebug, format, args...) }
+func Tracef(format string, args ...any) { logAt(levelTrace, format, args...) }
+func Infof(format string, args ...any)  { logAt(levelInfo, format, args...) }
+func Warnf(format string, args ...any)  { logAt(levelWarn, format, args...) }
+func Errorf(format string, args ...any) { logAt(levelError, format, args...) }

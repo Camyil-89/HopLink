@@ -92,7 +92,7 @@ func (a *App) ensureSecrets() error {
 			return e
 		}
 		now := time.Now()
-		tmpl := x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: sni}, NotBefore: now.Add(-time.Minute), NotAfter: now.AddDate(5, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
+		tmpl := x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: sni}, NotBefore: now.Add(-time.Minute), NotAfter: now.AddDate(100, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
 		if ip := net.ParseIP(sni); ip != nil {
 			tmpl.IPAddresses = []net.IP{ip}
 		} else if sni != "" {
@@ -110,4 +110,24 @@ func (a *App) ensureSecrets() error {
 		a.config.CertificateKey = string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: priv}))
 	}
 	return a.saveLocked()
+}
+
+func formatCertificateLifetime(certPEM string) string {
+	certPEM = strings.TrimSpace(certPEM)
+	if certPEM == "" {
+		return "Будет создан автоматически (срок 100 лет)"
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		return "Не удалось прочитать сертификат"
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return "Не удалось прочитать сертификат"
+	}
+	days := int(time.Until(cert.NotAfter).Hours() / 24)
+	if days < 0 {
+		return fmt.Sprintf("Истёк %s", cert.NotAfter.Format("02.01.2006"))
+	}
+	return fmt.Sprintf("Действителен до %s (осталось %d дн.)", cert.NotAfter.Format("02.01.2006"), days)
 }

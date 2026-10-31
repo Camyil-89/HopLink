@@ -36,6 +36,20 @@ export function SettingsTab({ state, showSecrets, onChange, onToggleSecrets, onG
             </label>
             <button className="btn secondary generate-password" type="button" onClick={() => onChange({ obfsPassword: generatePassword(32) })}>Сгенерировать</button>
           </div>}
+          <label className="field">Транспорт между реле
+            <select value={state.relayTransport || 'udp'} onChange={event => onChange({ relayTransport: event.target.value as AppState['relayTransport'] })}>
+              <option value="udp">UDP (по умолчанию)</option>
+              <option value="ssh">SSH-туннель (мультиплекс UDP)</option>
+              <option value="ws">WebSocket over TLS (маршрутный сертификат)</option>
+            </select>
+            <small className="field-hint">
+              {state.relayTransport === 'ws'
+                ? `WSS между реле шифруется основным TLS-сертификатом маршрута. Порт транспорта: ${(state.port || 22033) + 1}.`
+                : state.relayTransport === 'ssh'
+                  ? `SSH режим передаёт QUIC-пакеты между узлами через зашифрованный канал; порт SSH-транспорта: ${(state.port || 22033) + 1}.`
+                  : 'Прямая передача UDP между узлами цепочки.'}
+            </small>
+          </label>
           <label className="field">UDP порт<input type="number" min="1" max="65535" value={state.port} onChange={event => onChange({ port: Number(event.target.value) })} /></label>
           <label className="field">
             Домен входного узла (необязательно)
@@ -61,13 +75,14 @@ export function SettingsTab({ state, showSecrets, onChange, onToggleSecrets, onG
               <label className="field">Общий ключ цепочки<textarea rows={3} value={state.chainKey} onChange={event => onChange({ chainKey: event.target.value })} /></label>
               <label className="field">TLS сертификат<textarea rows={5} value={state.certificate} onChange={event => onChange({ certificate: event.target.value })} /></label>
               <label className="field">TLS приватный ключ<textarea rows={5} value={state.certificateKey} onChange={event => onChange({ certificateKey: event.target.value })} /></label>
+              {!!state.certificateLifetime && <p className="field-hint">{state.certificateLifetime}</p>}
             </>
           ) : (
             <div className="secret-state">
               <ShieldCheck size={18} />
               <span>
                 <b>{state.chainKey ? 'Ключ цепочки сохранён' : 'Ключ будет создан при первом применении'}</b>
-                <small>{state.certificate ? 'TLS-сертификат и приватный ключ сохранены' : 'TLS-пара будет создана автоматически'}</small>
+                <small>{state.certificateLifetime || (state.certificate ? 'TLS-сертификат и приватный ключ сохранены' : 'TLS-пара будет создана автоматически')}</small>
               </span>
             </div>
           )}

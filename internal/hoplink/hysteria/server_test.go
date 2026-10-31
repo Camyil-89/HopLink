@@ -1,4 +1,4 @@
-package hoplink
+package hysteria
 
 import (
 	"crypto/x509"
@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func TestHy2PasswordAuth(t *testing.T) {
-	a := hy2PasswordAuth{password: "relay-secret", users: []hy2User{{name: "alice", password: "short"}, {name: "bob", password: "longer-secret"}}}
+func TestPasswordAuth(t *testing.T) {
+	a := PasswordAuth{ChainPassword: "relay-secret", Users: []User{{Name: "alice", Password: "short"}, {Name: "bob", Password: "longer-secret"}}}
 	for _, tc := range []struct {
 		password, name string
 		ok             bool
@@ -26,9 +26,9 @@ func TestHy2PasswordAuth(t *testing.T) {
 	}
 }
 
-func TestMakeHy2ShareLinkEscapesPassword(t *testing.T) {
+func TestMakeShareLinkEscapesPassword(t *testing.T) {
 	password := "a@b:c#d% e"
-	link := makeHy2ShareLink(password, "example.com", "22033", "example.com", "pin", "HopLink")
+	link := MakeShareLink(password, "example.com", "22033", "example.com", "pin", "HopLink")
 	u, err := url.Parse(link)
 	if err != nil {
 		t.Fatal(err)
@@ -38,8 +38,8 @@ func TestMakeHy2ShareLinkEscapesPassword(t *testing.T) {
 	}
 }
 
-func TestMakeHy2ShareLinkOmitsEmptySNI(t *testing.T) {
-	link := makeHy2ShareLink("user-secret", "192.0.2.1", "22033", "", "pin", "HopLink")
+func TestMakeShareLinkOmitsEmptySNI(t *testing.T) {
+	link := MakeShareLink("user-secret", "192.0.2.1", "22033", "", "pin", "HopLink")
 	u, err := url.Parse(link)
 	if err != nil {
 		t.Fatal(err)
@@ -49,8 +49,8 @@ func TestMakeHy2ShareLinkOmitsEmptySNI(t *testing.T) {
 	}
 }
 
-func TestGenerateHy2CertificateWithoutSNIHasNoNameSAN(t *testing.T) {
-	certPEM, _, err := generateHy2Certificate("")
+func TestGenerateCertificateWithoutSNIHasNoNameSAN(t *testing.T) {
+	certPEM, _, err := GenerateCertificate("")
 	if err != nil {
 		t.Fatal(err)
 	}

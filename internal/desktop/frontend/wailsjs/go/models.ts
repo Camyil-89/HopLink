@@ -19,6 +19,11 @@ export namespace desktop {
 	    logLevel?: string;
 	    obfsType?: string;
 	    obfsPassword?: string;
+	    relayTransport?: string;
+	    relayTransportClientKey?: string;
+	    relayTransportClientPub?: string;
+	    relayTransportHostKey?: string;
+	    relayTransportHostPub?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Route(source);
@@ -44,6 +49,11 @@ export namespace desktop {
 	        this.logLevel = source["logLevel"];
 	        this.obfsType = source["obfsType"];
 	        this.obfsPassword = source["obfsPassword"];
+	        this.relayTransport = source["relayTransport"];
+	        this.relayTransportClientKey = source["relayTransportClientKey"];
+	        this.relayTransportClientPub = source["relayTransportClientPub"];
+	        this.relayTransportHostKey = source["relayTransportHostKey"];
+	        this.relayTransportHostPub = source["relayTransportHostPub"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -147,9 +157,15 @@ export namespace desktop {
 	    chainKey: string;
 	    certificate: string;
 	    certificateKey: string;
+	    certificateLifetime?: string;
 	    logLevel?: string;
 	    obfsType?: string;
 	    obfsPassword?: string;
+	    relayTransport?: string;
+	    relayTransportClientKey?: string;
+	    relayTransportClientPub?: string;
+	    relayTransportHostKey?: string;
+	    relayTransportHostPub?: string;
 	    knownHosts: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -172,9 +188,15 @@ export namespace desktop {
 	        this.chainKey = source["chainKey"];
 	        this.certificate = source["certificate"];
 	        this.certificateKey = source["certificateKey"];
+	        this.certificateLifetime = source["certificateLifetime"];
 	        this.logLevel = source["logLevel"];
 	        this.obfsType = source["obfsType"];
 	        this.obfsPassword = source["obfsPassword"];
+	        this.relayTransport = source["relayTransport"];
+	        this.relayTransportClientKey = source["relayTransportClientKey"];
+	        this.relayTransportClientPub = source["relayTransportClientPub"];
+	        this.relayTransportHostKey = source["relayTransportHostKey"];
+	        this.relayTransportHostPub = source["relayTransportHostPub"];
 	        this.knownHosts = source["knownHosts"];
 	    }
 	
