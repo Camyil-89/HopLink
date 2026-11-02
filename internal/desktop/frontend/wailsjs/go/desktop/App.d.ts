@@ -24,6 +24,8 @@ export function GetRouteJournal(arg1:string,arg2:string,arg3:string,arg4:string)
 
 export function GetState():Promise<desktop.AppConfig>;
 
+export function GetUserLinkVariants(arg1:string):Promise<Record<string, string>>;
+
 export function GetVaultStatus():Promise<desktop.VaultStatus>;
 
 export function InstallDesktopUpdate():Promise<void>;

@@ -154,6 +154,32 @@ func TestRouteLinksPreserveEntryAddressAndExistingCertificate(t *testing.T) {
 	}
 }
 
+func TestRouteLinkVariantsUseDNSAndCurrentEntryIP(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(12), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := AppConfig{Port: 22033, EntryDomain: "vpn.example", Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), CertificateKey: string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}))}
+	dns, ip, err := routeUserLinkVariants(cfg, Server{Host: "203.0.113.42"}, []User{{Name: "alice", Password: "pw"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dnsURL, _ := url.Parse(dns["alice"])
+	ipURL, _ := url.Parse(ip["alice"])
+	if dnsURL.Host != "vpn.example:22033" || ipURL.Host != "203.0.113.42:22033" {
+		t.Fatalf("unexpected link hosts: dns=%q ip=%q", dnsURL.Host, ipURL.Host)
+	}
+}
+
 func TestRouteLinksOmitSNIWhenUnset(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"hoplink/internal/desktop/app/route"
 	"net"
 	"net/url"
 	"strconv"
@@ -83,20 +84,23 @@ func routeNodeArgs(cfg AppConfig, order []Server, index int, installDir string) 
 }
 
 func routeUserLinks(cfg AppConfig, entry Server, users []User) (map[string]string, error) {
+	links, _, err := routeUserLinkVariants(cfg, entry, users)
+	return links, err
+}
+
+func routeUserLinkVariants(cfg AppConfig, entry Server, users []User) (map[string]string, map[string]string, error) {
 	cert, err := tls.X509KeyPair([]byte(cfg.Certificate), []byte(cfg.CertificateKey))
 	if err != nil {
-		return nil, fmt.Errorf("сертификат маршрута: %w", err)
+		return nil, nil, fmt.Errorf("сертификат маршрута: %w", err)
 	}
 	if len(cert.Certificate) == 0 {
-		return nil, fmt.Errorf("сертификат маршрута пустой")
+		return nil, nil, fmt.Errorf("сертификат маршрута пустой")
 	}
 	pin := sha256.Sum256(cert.Certificate[0])
-	host := cfg.EntryDomain
-	if host == "" {
-		host = entry.Host
-	}
-	host = strings.Trim(strings.TrimSpace(host), "[]")
+	dnsHost := strings.Trim(strings.TrimSpace(cfg.EntryDomain), "[]")
+	ipHost := strings.Trim(strings.TrimSpace(entry.Host), "[]")
 	links := make(map[string]string, len(users))
+	ipLinks := make(map[string]string, len(users))
 	for _, user := range users {
 		if !user.isActive() {
 			continue
@@ -110,8 +114,52 @@ func routeUserLinks(cfg AppConfig, entry Server, users []User) (map[string]strin
 			query.Set("obfs", cfg.ObfsType)
 			query.Set("obfs-password", cfg.ObfsPassword)
 		}
-		u := &url.URL{Scheme: "hysteria2", User: url.User(user.Password), Host: net.JoinHostPort(host, strconv.Itoa(cfg.Port)), Path: "/", RawQuery: query.Encode(), Fragment: "HopLink-" + user.Name}
-		links[user.Name] = u.String()
+		makeLink := func(host string) string {
+			u := &url.URL{Scheme: "hysteria2", User: url.User(user.Password), Host: net.JoinHostPort(host, strconv.Itoa(cfg.Port)), Path: "/", RawQuery: query.Encode(), Fragment: "HopLink-" + user.Name}
+			return u.String()
+		}
+		ipLinks[user.Name] = makeLink(ipHost)
+		if dnsHost != "" {
+			links[user.Name] = makeLink(dnsHost)
+		}
 	}
-	return links, nil
+	return links, ipLinks, nil
+}
+
+func (a *App) GetUserLinkVariants(userID string) (map[string]string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var user *User
+	for i := range a.config.Users {
+		if a.config.Users[i].ID == userID {
+			user = &a.config.Users[i]
+			break
+		}
+	}
+	if user == nil || !user.isActive() {
+		return nil, fmt.Errorf("пользователь не найден или отключён")
+	}
+	order, err := route.OrderedChain(mapRouteServers(a.config.MapServers), mapRouteEdges(a.config.Edges))
+	if err != nil || len(order) == 0 {
+		return nil, fmt.Errorf("сначала сохраните карту с входным сервером")
+	}
+	cfg := a.config
+	if cfg.Certificate == "" || cfg.CertificateKey == "" {
+		return nil, fmt.Errorf("сначала задайте сертификат в настройках маршрута")
+	}
+	entry := Server{}
+	for _, server := range a.config.MapServers {
+		if server.ID == order[0].ID {
+			entry = server
+			break
+		}
+	}
+	if entry.ID == "" {
+		return nil, fmt.Errorf("не найден входной сервер маршрута")
+	}
+	dnsLinks, ipLinks, err := routeUserLinkVariants(cfg, entry, []User{*user})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"dns": dnsLinks[user.Name], "ip": ipLinks[user.Name]}, nil
 }

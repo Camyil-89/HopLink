@@ -1,6 +1,8 @@
 # React frontend
 
-- `src/app/App.tsx`: application state and navigation.
+- `src/app/App.tsx`: vault gate and shell composition.
+- `src/app/useHoplinkApp.ts`: application state, Wails calls, and handlers.
+- `src/app/AppMain.tsx`, `AppModals.tsx`, `VaultScreen.tsx`: main UI sections.
 - `src/tabs/`: top-level screens and route tabs.
 - `src/components/`: reusable UI elements, including the map canvas and nodes.
 - `src/modals/`: forms, confirmations, and operation progress dialogs.
