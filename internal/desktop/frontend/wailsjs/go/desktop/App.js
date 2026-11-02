@@ -46,6 +46,10 @@ export function GetState() {
   return window['go']['desktop']['App']['GetState']();
 }
 
+export function GetUserLinkVariants(arg1) {
+  return window['go']['desktop']['App']['GetUserLinkVariants'](arg1);
+}
+
 export function GetVaultStatus() {
   return window['go']['desktop']['App']['GetVaultStatus']();
 }
