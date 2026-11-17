@@ -3,6 +3,8 @@ package desktop
 import (
 	"fmt"
 	"strings"
+
+	"hoplink/internal/hoplink/cascade"
 )
 
 func (a *App) SaveMap(servers []Server, edges []Edge) (AppConfig, error) {
@@ -32,7 +34,7 @@ func (a *App) SaveMap(servers []Server, edges []Edge) (AppConfig, error) {
 	}
 	return a.config, nil
 }
-func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey, logLevel, obfsType, obfsPassword, relayTransport string) (AppConfig, error) {
+func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey, logLevel, obfsType, obfsPassword, relayTransport, chainMode, cascadeDomainPatterns, cascadeSNIPatterns string) (AppConfig, error) {
 	if err := validateMap(servers, edges); err != nil {
 		return a.GetState(), err
 	}
@@ -66,6 +68,16 @@ func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port in
 	if !validRelayTransport(relayTransport) {
 		return a.GetState(), fmt.Errorf("неверный транспорт между реле")
 	}
+	chainMode = normalizeChainMode(chainMode)
+	if !validChainMode(chainMode) {
+		return a.GetState(), fmt.Errorf("неверный режим цепочки")
+	}
+	if _, err := cascade.LoadPatternsFromText(cascadeDomainPatterns); err != nil {
+		return a.GetState(), fmt.Errorf("неверный regex доменов: %w", err)
+	}
+	if _, err := cascade.LoadPatternsFromText(cascadeSNIPatterns); err != nil {
+		return a.GetState(), fmt.Errorf("неверный regex SNI: %w", err)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.config.MapServers = append([]Server{}, servers...)
@@ -86,6 +98,9 @@ func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port in
 	a.config.LogLevel = logLevel
 	a.config.ObfsType, a.config.ObfsPassword = obfsType, obfsPassword
 	a.config.RelayTransport = relayTransport
+	a.config.ChainMode = chainMode
+	a.config.CascadeDomainPatterns = cascadeDomainPatterns
+	a.config.CascadeSNIPatterns = cascadeSNIPatterns
 	return a.config, a.saveLocked()
 }
 func (a *App) clearRouteMigrationLayoutsLocked(routeID string) {

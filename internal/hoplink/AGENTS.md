@@ -14,10 +14,12 @@
 | `wire/` | Shared UDP frame encoding for SSH and WebSocket transports |
 | `obfs/` | UDP obfuscation (Salamander, Gecko) on packet connections |
 | `hysteria/` | Hysteria2 exit server (TLS, users, Hiddify links) |
+| `cascade/` | Hop-by-hop HY2 with entry routing by domain/SNI regex |
 
 Data path:
 
-- **Exit**: client → … → `relay` (optional `obfs` on legs) → `hysteria` (VPN termination).
+- **Exit (udp-relay)**: client → … → `relay` (optional `obfs` on legs) → `hysteria` (VPN termination).
+- **Cascade (`hy2-cascade`)**: client → entry HY2 (cert + users) → … → exit HY2; matching regex on entry exits locally.
 - **Between relays**: raw UDP (`relay`) or `relay` → `ssh` → next `relay`.
 
 After changes, run `go test -short ./internal/hoplink/...` from the repository root. Full chain tests: `go test -tags=integration ./internal/hoplink/relay/...`.

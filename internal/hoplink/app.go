@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"hoplink/internal/hoplink/cascade"
 	"hoplink/internal/hoplink/hysteria"
 	hlog "hoplink/internal/hoplink/log"
 	"hoplink/internal/hoplink/relay"
@@ -22,7 +23,12 @@ import (
 // Run starts an opaque UDP relay or the end-to-end Hysteria2 exit server.
 func Run() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	mode := flag.String("mode", "hy2-forward", "режим узла: udp-relay или hy2-forward (выход)")
+	mode := flag.String("mode", "hy2-forward", "режим узла: udp-relay, hy2-forward (выход) или hy2-cascade")
+	cascadeRole := flag.String("cascade-role", "", "роль каскада: entry, hop или exit")
+	cascadeNext := flag.String("cascade-next", "", "адрес следующего узла HY2 host:port")
+	cascadeDomainPatterns := flag.String("cascade-domain-patterns-file", "", "файл regex для прямого выхода с входа по домену")
+	cascadeSNIPatterns := flag.String("cascade-sni-patterns-file", "", "файл regex для прямого выхода с входа по SNI TLS")
+	cascadeTrustCert := flag.String("cascade-trust-cert", "", "PEM сертификата для проверки следующего узла")
 	capabilities := flag.Bool("capabilities", false, "вывести возможности бинарника и выйти")
 	forward := flag.String("f", "", "адрес следующего UDP узла для udp-relay")
 	relayIdleTimeout := flag.Duration("relay-idle-timeout", relay.DefaultIdleTimeout, "время простоя UDP-сессии реле")
@@ -57,10 +63,34 @@ func Run() {
 		fmt.Println("udp-relay-v1")
 		fmt.Println("ssh-udp-relay-v1")
 		fmt.Println("ws-udp-relay-v1")
+		fmt.Println("hy2-cascade-v1")
 		return
 	}
 	if err := hlog.SetLevel(*logLevel); err != nil {
 		log.Fatal(err)
+	}
+	if *keyFile != "" {
+		data, err := os.ReadFile(*keyFile)
+		if err != nil {
+			log.Fatalf("прочитать -key-file %s: %v", *keyFile, err)
+		}
+		fileKey := strings.TrimSpace(string(data))
+		if *key != "" && *key != fileKey {
+			log.Fatal("-key и -key-file содержат разные ключи")
+		}
+		*key = fileKey
+	}
+	if *mode == "hy2-cascade" {
+		if strings.TrimSpace(*cascadeRole) == "" {
+			log.Fatal("для hy2-cascade укажите -cascade-role entry, hop или exit")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		_ = ctx
+		if err := cascade.Run(*listen, *cascadeRole, *key, *sni, *cert, *certKey, *certDir, *usersFile, *cascadeNext, *cascadeDomainPatterns, *cascadeSNIPatterns, *cascadeTrustCert, *hy2Obfs, *hy2ObfsKeyFile); err != nil {
+			log.Fatalf("Hysteria2 cascade: %v", err)
+		}
+		return
 	}
 	if *mode == "udp-relay" || *mode == "hy2-enter" {
 		transport := strings.ToLower(strings.TrimSpace(*relayTransport))
@@ -118,19 +148,8 @@ func Run() {
 		}
 		return
 	}
-	if *keyFile != "" {
-		data, err := os.ReadFile(*keyFile)
-		if err != nil {
-			log.Fatalf("прочитать -key-file %s: %v", *keyFile, err)
-		}
-		fileKey := strings.TrimSpace(string(data))
-		if *key != "" && *key != fileKey {
-			log.Fatal("-key и -key-file содержат разные ключи")
-		}
-		*key = fileKey
-	}
 	if *mode != "hy2-forward" {
-		log.Fatalf("неподдерживаемый режим %q; доступны udp-relay и hy2-forward", *mode)
+		log.Fatalf("неподдерживаемый режим %q; доступны udp-relay, hy2-forward и hy2-cascade", *mode)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -59,6 +59,9 @@ export type Route = {
   obfsType?: string;
   obfsPassword?: string;
   relayTransport?: string;
+  chainMode?: string;
+  cascadeDomainPatterns?: string;
+  cascadeSNIPatterns?: string;
 };
 
 export type AppState = {
@@ -81,6 +84,9 @@ export type AppState = {
   obfsType?: string;
   obfsPassword?: string;
   relayTransport?: string;
+  chainMode?: string;
+  cascadeDomainPatterns?: string;
+  cascadeSNIPatterns?: string;
   knownHosts: Record<string, string>;
 };
 
@@ -108,5 +114,8 @@ export const emptyState: AppState = {
   obfsType: "",
   obfsPassword: "",
   relayTransport: "udp",
+  chainMode: "udp-relay",
+  cascadeDomainPatterns: "",
+  cascadeSNIPatterns: "",
   knownHosts: {},
 };

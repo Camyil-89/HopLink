@@ -62,6 +62,16 @@ func (a PasswordAuth) Authenticate(addr net.Addr, auth string, tx uint64) (bool,
 	return true, a.Users[index-1].Name
 }
 
+// LoadUsersFile reads Hysteria2 user credentials from a whitespace-separated line file.
+func LoadUsersFile(path string) ([]User, error) {
+	return loadUsers(path)
+}
+
+// LoadCertificatePair loads or generates the route TLS certificate and returns its SHA-256 pin.
+func LoadCertificatePair(certPath, keyPath, certDir, sni string) ([]tls.Certificate, string, string, error) {
+	return loadCertificate(certPath, keyPath, certDir, sni)
+}
+
 func loadUsers(path string) ([]User, error) {
 	if path == "" {
 		return nil, nil

@@ -222,16 +222,26 @@ func (a *App) apply(ctx context.Context) error {
 			return fmt.Errorf("загрузка бинарника на %s: %w", s.Host, e)
 		}
 		capabilities, capabilityErr := runServerContext(ctx, clients[i], s, "chmod 700 "+remote.ShellQuote(stage+"/HopLink")+" && "+remote.ShellQuote(stage+"/HopLink")+" -capabilities", nil)
-		if capabilityErr != nil || !strings.Contains(capabilities, "udp-relay-v1") {
-			return fmt.Errorf("%s: бинарник не поддерживает UDP-реле; выберите сборку из текущих исходников или обновлённый релиз", s.Host)
+		if capabilityErr != nil {
+			return fmt.Errorf("%s: не удалось проверить возможности бинарника: %v", s.Host, capabilityErr)
 		}
-		if strings.TrimSpace(cfg.RelayTransport) == "ssh" && !strings.Contains(capabilities, "ssh-udp-relay-v1") {
-			return fmt.Errorf("%s: бинарник не поддерживает SSH-транспорт реле; выберите сборку из текущих исходников", s.Host)
+		if isCascadeMode(cfg) {
+			if !strings.Contains(capabilities, "hy2-cascade-v1") {
+				return fmt.Errorf("%s: бинарник не поддерживает каскад HY2; выберите сборку из текущих исходников", s.Host)
+			}
+			a.log(fmt.Sprintf("Бинарник на %s проверен: поддержка каскадного HY2 подтверждена.", s.Host))
+		} else {
+			if !strings.Contains(capabilities, "udp-relay-v1") {
+				return fmt.Errorf("%s: бинарник не поддерживает UDP-реле; выберите сборку из текущих исходников или обновлённый релиз", s.Host)
+			}
+			if strings.TrimSpace(cfg.RelayTransport) == "ssh" && !strings.Contains(capabilities, "ssh-udp-relay-v1") {
+				return fmt.Errorf("%s: бинарник не поддерживает SSH-транспорт реле; выберите сборку из текущих исходников", s.Host)
+			}
+			if strings.TrimSpace(cfg.RelayTransport) == "ws" && !strings.Contains(capabilities, "ws-udp-relay-v1") {
+				return fmt.Errorf("%s: бинарник не поддерживает WebSocket-транспорт реле; выберите сборку из текущих исходников", s.Host)
+			}
+			a.log(fmt.Sprintf("Бинарник на %s проверен: поддержка UDP-реле подтверждена.", s.Host))
 		}
-		if strings.TrimSpace(cfg.RelayTransport) == "ws" && !strings.Contains(capabilities, "ws-udp-relay-v1") {
-			return fmt.Errorf("%s: бинарник не поддерживает WebSocket-транспорт реле; выберите сборку из текущих исходников", s.Host)
-		}
-		a.log(fmt.Sprintf("Бинарник на %s проверен: поддержка UDP-реле подтверждена.", s.Host))
 	}
 	for _, old := range cfg.DeployedServers {
 		if len(oldLayouts) == 0 {
@@ -287,11 +297,13 @@ func (a *App) apply(ctx context.Context) error {
 		}
 		a.log(fmt.Sprintf("Формирую конфигурацию узла %d/%d: %s…", i+1, len(order), s.Host))
 		stage := stages[i]
+		cascade := isCascadeMode(cfg)
+		last := len(order) - 1
 		transport := cfg.RelayTransport
 		if transport == "" {
 			transport = "udp"
 		}
-		if transport == "ssh" {
+		if !cascade && transport == "ssh" {
 			if i > 0 {
 				if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/relay_ssh_host.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.RelayTransportHostKey)))); e != nil {
 					return e
@@ -309,7 +321,7 @@ func (a *App) apply(ctx context.Context) error {
 				}
 			}
 		}
-		if transport == "ws" {
+		if !cascade && transport == "ws" {
 			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/hy2-server.crt"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.Certificate)))); e != nil {
 				return e
 			}
@@ -317,8 +329,12 @@ func (a *App) apply(ctx context.Context) error {
 				return e
 			}
 		}
-		if i == len(order)-1 {
-			a.log(fmt.Sprintf("Подготавливаю учётные данные и TLS-сертификат на конечном узле %s…", s.Host))
+		if cascade || i == last {
+			if cascade && i == 0 {
+				a.log(fmt.Sprintf("Подготавливаю учётные данные и TLS-сертификат на входном узле %s…", s.Host))
+			} else if !cascade && i == last {
+				a.log(fmt.Sprintf("Подготавливаю учётные данные и TLS-сертификат на конечном узле %s…", s.Host))
+			}
 			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/shared.key"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.ChainKey+"\n")))); e != nil {
 				return e
 			}
@@ -329,10 +345,22 @@ func (a *App) apply(ctx context.Context) error {
 			q[j] = remote.ShellQuote(x)
 		}
 		unit := "[Unit]\nDescription=HopLink Hysteria2 relay\nAfter=network-online.target\nWants=network-online.target\n[Service]\nType=simple\nUser=root\nWorkingDirectory=" + installDir + "\nExecStart=" + strings.Join(q, " ") + "\nRestart=on-failure\nRestartSec=3\nLimitNOFILE=65535\nUMask=0077\n[Install]\nWantedBy=multi-user.target\n"
-		if i == len(order)-1 {
+		uploadUsers := (cascade && i == 0) || (!cascade && i == last)
+		uploadCerts := cascade || i == last
+		if uploadUsers {
 			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/users.txt"), []byte(base64.StdEncoding.EncodeToString([]byte(userLines)))); e != nil {
 				return e
 			}
+		}
+		if cascade && i == 0 {
+			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/cascade_domains.txt"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.CascadeDomainPatterns)))); e != nil {
+				return e
+			}
+			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/cascade_sni.txt"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.CascadeSNIPatterns)))); e != nil {
+				return e
+			}
+		}
+		if uploadCerts {
 			if _, e = runServerContext(ctx, clients[i], s, "base64 -d > "+remote.ShellQuote(stage+"/hy2-server.crt"), []byte(base64.StdEncoding.EncodeToString([]byte(cfg.Certificate)))); e != nil {
 				return e
 			}
@@ -349,7 +377,19 @@ func (a *App) apply(ctx context.Context) error {
 			return e
 		}
 		install := "set -eu; systemctl stop " + unitName + " 2>/dev/null || true; install -d -m 700 " + remote.ShellQuote(installDir) + "; install -m 755 " + remote.ShellQuote(stage+"/HopLink") + " " + remote.ShellQuote(installDir+"/HopLink") + "; install -m 644 " + remote.ShellQuote(stage+"/"+unitName) + " /etc/systemd/system/" + unitName + "; "
-		if i == len(order)-1 {
+		if cascade {
+			install += "install -m 600 " + remote.ShellQuote(stage+"/shared.key") + " " + remote.ShellQuote(installDir+"/shared.key") + "; install -m 644 " + remote.ShellQuote(stage+"/hy2-server.crt") + " " + remote.ShellQuote(installDir+"/hy2-server.crt") + "; install -m 600 " + remote.ShellQuote(stage+"/hy2-server.key") + " " + remote.ShellQuote(installDir+"/hy2-server.key") + "; "
+			if i == 0 {
+				install += "install -m 600 " + remote.ShellQuote(stage+"/users.txt") + " " + remote.ShellQuote(installDir+"/users.txt") + "; install -m 600 " + remote.ShellQuote(stage+"/cascade_domains.txt") + " " + remote.ShellQuote(installDir+"/cascade_domains.txt") + "; install -m 600 " + remote.ShellQuote(stage+"/cascade_sni.txt") + " " + remote.ShellQuote(installDir+"/cascade_sni.txt") + "; "
+			} else {
+				install += "rm -f -- " + remote.ShellQuote(installDir+"/users.txt") + " " + remote.ShellQuote(installDir+"/cascade_domains.txt") + " " + remote.ShellQuote(installDir+"/cascade_sni.txt") + "; "
+			}
+			if cfg.ObfsType != "" {
+				install += "install -m 600 " + remote.ShellQuote(stage+"/obfs.key") + " " + remote.ShellQuote(installDir+"/obfs.key") + "; "
+			} else {
+				install += "rm -f -- " + remote.ShellQuote(installDir+"/obfs.key") + "; "
+			}
+		} else if i == last {
 			install += "install -m 600 " + remote.ShellQuote(stage+"/shared.key") + " " + remote.ShellQuote(installDir+"/shared.key") + "; install -m 600 " + remote.ShellQuote(stage+"/users.txt") + " " + remote.ShellQuote(installDir+"/users.txt") + "; install -m 644 " + remote.ShellQuote(stage+"/hy2-server.crt") + " " + remote.ShellQuote(installDir+"/hy2-server.crt") + "; install -m 600 " + remote.ShellQuote(stage+"/hy2-server.key") + " " + remote.ShellQuote(installDir+"/hy2-server.key") + "; "
 			if cfg.ObfsType != "" {
 				install += "install -m 600 " + remote.ShellQuote(stage+"/obfs.key") + " " + remote.ShellQuote(installDir+"/obfs.key") + "; "
@@ -357,7 +397,7 @@ func (a *App) apply(ctx context.Context) error {
 				install += "rm -f -- " + remote.ShellQuote(installDir+"/obfs.key") + "; "
 			}
 		} else {
-			removeNames := []string{"shared.key", "users.txt", "obfs.key", "relay_ssh_host.key", "relay_transport_auth", "relay_transport_client.key", "relay_transport_next_host.pub"}
+			removeNames := []string{"shared.key", "users.txt", "obfs.key", "relay_ssh_host.key", "relay_transport_auth", "relay_transport_client.key", "relay_transport_next_host.pub", "cascade_domains.txt", "cascade_sni.txt"}
 			if transport != "ws" {
 				removeNames = append(removeNames, "hy2-server.crt", "hy2-server.key")
 			}
@@ -365,10 +405,10 @@ func (a *App) apply(ctx context.Context) error {
 				install += "rm -f -- " + remote.ShellQuote(installDir+"/"+name) + "; "
 			}
 		}
-		if transport == "ws" {
+		if !cascade && transport == "ws" {
 			install += "install -m 644 " + remote.ShellQuote(stage+"/hy2-server.crt") + " " + remote.ShellQuote(installDir+"/hy2-server.crt") + "; install -m 600 " + remote.ShellQuote(stage+"/hy2-server.key") + " " + remote.ShellQuote(installDir+"/hy2-server.key") + "; "
 		}
-		if transport == "ssh" {
+		if !cascade && transport == "ssh" {
 			if i > 0 {
 				install += "install -m 600 " + remote.ShellQuote(stage+"/relay_ssh_host.key") + " " + remote.ShellQuote(installDir+"/relay_ssh_host.key") + "; install -m 600 " + remote.ShellQuote(stage+"/relay_transport_auth") + " " + remote.ShellQuote(installDir+"/relay_transport_auth") + "; "
 			}
@@ -376,7 +416,7 @@ func (a *App) apply(ctx context.Context) error {
 				install += "install -m 600 " + remote.ShellQuote(stage+"/relay_transport_client.key") + " " + remote.ShellQuote(installDir+"/relay_transport_client.key") + "; install -m 644 " + remote.ShellQuote(stage+"/relay_transport_next_host.pub") + " " + remote.ShellQuote(installDir+"/relay_transport_next_host.pub") + "; "
 			}
 		}
-		if i == len(order)-1 && transport == "ssh" && len(order) > 1 {
+		if !cascade && i == last && transport == "ssh" && len(order) > 1 {
 			install += "install -m 600 " + remote.ShellQuote(stage+"/relay_ssh_host.key") + " " + remote.ShellQuote(installDir+"/relay_ssh_host.key") + "; install -m 600 " + remote.ShellQuote(stage+"/relay_transport_auth") + " " + remote.ShellQuote(installDir+"/relay_transport_auth") + "; "
 		}
 		install += "rm -rf -- " + remote.ShellQuote(stage) + "; systemctl daemon-reload; systemctl enable " + unitName

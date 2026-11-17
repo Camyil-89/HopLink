@@ -20,6 +20,9 @@ export namespace desktop {
 	    obfsType?: string;
 	    obfsPassword?: string;
 	    relayTransport?: string;
+	    chainMode?: string;
+	    cascadeDomainPatterns?: string;
+	    cascadeSNIPatterns?: string;
 	    relayTransportClientKey?: string;
 	    relayTransportClientPub?: string;
 	    relayTransportHostKey?: string;
@@ -50,6 +53,9 @@ export namespace desktop {
 	        this.obfsType = source["obfsType"];
 	        this.obfsPassword = source["obfsPassword"];
 	        this.relayTransport = source["relayTransport"];
+	        this.chainMode = source["chainMode"];
+	        this.cascadeDomainPatterns = source["cascadeDomainPatterns"];
+	        this.cascadeSNIPatterns = source["cascadeSNIPatterns"];
 	        this.relayTransportClientKey = source["relayTransportClientKey"];
 	        this.relayTransportClientPub = source["relayTransportClientPub"];
 	        this.relayTransportHostKey = source["relayTransportHostKey"];
@@ -162,6 +168,9 @@ export namespace desktop {
 	    obfsType?: string;
 	    obfsPassword?: string;
 	    relayTransport?: string;
+	    chainMode?: string;
+	    cascadeDomainPatterns?: string;
+	    cascadeSNIPatterns?: string;
 	    relayTransportClientKey?: string;
 	    relayTransportClientPub?: string;
 	    relayTransportHostKey?: string;
@@ -193,6 +202,9 @@ export namespace desktop {
 	        this.obfsType = source["obfsType"];
 	        this.obfsPassword = source["obfsPassword"];
 	        this.relayTransport = source["relayTransport"];
+	        this.chainMode = source["chainMode"];
+	        this.cascadeDomainPatterns = source["cascadeDomainPatterns"];
+	        this.cascadeSNIPatterns = source["cascadeSNIPatterns"];
 	        this.relayTransportClientKey = source["relayTransportClientKey"];
 	        this.relayTransportClientPub = source["relayTransportClientPub"];
 	        this.relayTransportHostKey = source["relayTransportHostKey"];

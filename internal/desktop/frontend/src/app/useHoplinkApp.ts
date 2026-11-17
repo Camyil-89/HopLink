@@ -195,6 +195,9 @@ export function useHoplinkApp() {
         obfsType: s.obfsType,
         obfsPassword: s.obfsPassword,
         relayTransport: s.relayTransport,
+        chainMode: s.chainMode,
+        cascadeDomainPatterns: s.cascadeDomainPatterns,
+        cascadeSNIPatterns: s.cascadeSNIPatterns,
       },
     );
   };
@@ -330,8 +333,23 @@ export function useHoplinkApp() {
       ? state.servers.map((s) => (s.id === existing.id ? server : s))
       : [...state.servers, server];
     try {
-      const next = await api().SaveServers(servers);
-      setState({ ...state, ...next });
+      const next = (await api().SaveServers(servers)) as State;
+      setState((prev) => ({ ...prev, ...next }));
+      const mapServers = next.mapServers || [];
+      setNodes((current) => {
+        const byID = new Map(mapServers.map((s) => [s.id, s]));
+        const nextNodes = initialNodes(mapServers);
+        return nextNodes.map((node) => {
+          const old = current.find((n) => n.id === node.id);
+          if (!old) return node;
+          const server = byID.get(node.id);
+          return {
+            ...node,
+            position: old.position,
+            data: { ...node.data, server: server ?? (node.data as any).server },
+          };
+        });
+      });
       setDraftServer(emptyServerDraft());
       setEditingServer(null);
       setServerForm(false);
@@ -478,6 +496,9 @@ export function useHoplinkApp() {
       state.obfsType || "",
       state.obfsPassword || "",
       state.relayTransport || "udp",
+      state.chainMode || "udp-relay",
+      state.cascadeDomainPatterns || "",
+      state.cascadeSNIPatterns || "",
     )) as State;
     setState({ ...state, ...saved });
     setRouteStatuses((current) => {
