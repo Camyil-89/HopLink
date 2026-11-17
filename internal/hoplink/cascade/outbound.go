@@ -3,6 +3,7 @@ package cascade
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"hoplink/internal/hoplink/log"
@@ -10,6 +11,17 @@ import (
 	hyclient "github.com/apernet/hysteria/core/v2/client"
 	hyserver "github.com/apernet/hysteria/core/v2/server"
 )
+
+const (
+	routeValid = uint32(1 << 0)
+	routeLocal = uint32(1 << 1)
+)
+
+var tcpSniffPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 4096)
+	},
+}
 
 type directOutbound struct {
 	dialer net.Dialer
@@ -108,28 +120,22 @@ func (c *chainUDPConn) Close() error { return c.conn.Close() }
 
 // entryRouter sniffs TLS SNI on the entry hop and picks direct vs upstream outbound per stream.
 type entryRouter struct {
-	nextAddr       string
 	domainPatterns Matcher
 	sniPatterns    Matcher
 	direct         *directOutbound
 	chain          *chainOutbound
 
-	mu       sync.Mutex
-	route    streamRoute
-	hasRoute bool
-}
-
-type streamRoute struct {
-	local bool
+	routeState atomic.Uint32
+	forceLocal   bool
 }
 
 func newEntryRouter(next string, domainPatterns, sniPatterns Matcher, chain *chainOutbound) *entryRouter {
 	return &entryRouter{
-		nextAddr:       next,
 		domainPatterns: domainPatterns,
 		sniPatterns:    sniPatterns,
 		direct:         newDirectOutbound(),
 		chain:          chain,
+		forceLocal:     next == "",
 	}
 }
 
@@ -143,18 +149,27 @@ func (r *entryRouter) localForAddr(host, sni string) bool {
 	return false
 }
 
+func (r *entryRouter) storeRoute(local bool) {
+	v := routeValid
+	if local {
+		v |= routeLocal
+	}
+	r.routeState.Store(v)
+}
+
 func (r *entryRouter) Check(isUDP bool, _ string) bool {
 	if isUDP {
-		return len(r.domainPatterns.patterns) > 0
+		return r.domainPatterns.HasRules()
 	}
-	return len(r.sniPatterns.patterns) > 0
+	return r.sniPatterns.HasRules()
 }
 
 func (r *entryRouter) TCP(stream hyserver.HyStream, reqAddr *string) ([]byte, error) {
 	host := hostFromReqAddr(*reqAddr)
-	buf := make([]byte, 4096)
+	buf := tcpSniffPool.Get().([]byte)
 	n, err := stream.Read(buf)
 	if err != nil {
+		tcpSniffPool.Put(buf)
 		return nil, err
 	}
 	var sni string
@@ -164,74 +179,61 @@ func (r *entryRouter) TCP(stream hyserver.HyStream, reqAddr *string) ([]byte, er
 		}
 	}
 	local := r.localForAddr(host, sni)
-	if r.nextAddr == "" {
+	if r.forceLocal {
 		local = true
 	}
-	r.mu.Lock()
-	r.route = streamRoute{local: local}
-	r.hasRoute = true
-	r.mu.Unlock()
+	r.storeRoute(local)
 	if n == 0 {
+		tcpSniffPool.Put(buf)
 		return nil, nil
 	}
-	return buf[:n], nil
+	out := make([]byte, n)
+	copy(out, buf[:n])
+	tcpSniffPool.Put(buf)
+	return out, nil
 }
 
 func (r *entryRouter) UDP(_ [][]byte, reqAddr *string) (bool, error) {
 	host := hostFromReqAddr(*reqAddr)
 	local := r.localForAddr(host, "")
-	if r.nextAddr == "" {
+	if r.forceLocal {
 		local = true
 	}
-	r.mu.Lock()
-	r.route = streamRoute{local: local}
-	r.hasRoute = true
-	r.mu.Unlock()
+	r.storeRoute(local)
 	return true, nil
 }
 
-func (r *entryRouter) takeRoute() streamRoute {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	route := r.route
-	r.hasRoute = false
-	return route
-}
-
 func (r *entryRouter) pickLocal(reqAddr string) bool {
-	if len(r.domainPatterns.patterns) == 0 && len(r.sniPatterns.patterns) == 0 {
+	if !r.domainPatterns.HasRules() && !r.sniPatterns.HasRules() {
 		return false
 	}
-	r.mu.Lock()
-	has := r.hasRoute
-	route := r.route
-	if has {
-		r.hasRoute = false
-	}
-	r.mu.Unlock()
-	if has {
-		return route.local
+	if v := r.routeState.Swap(0); v&routeValid != 0 {
+		return v&routeLocal != 0
 	}
 	host := hostFromReqAddr(reqAddr)
 	return r.localForAddr(host, "")
 }
 
+func (r *entryRouter) useDirect(reqAddr string) bool {
+	return r.forceLocal || r.chain == nil || r.pickLocal(reqAddr)
+}
+
 func (r *entryRouter) TCPOut(reqAddr string) (net.Conn, error) {
-	if r.pickLocal(reqAddr) || r.nextAddr == "" || r.chain == nil {
+	if r.useDirect(reqAddr) {
 		return r.direct.TCP(reqAddr)
 	}
 	return r.chain.TCP(reqAddr)
 }
 
 func (r *entryRouter) UDPOut(reqAddr string) (hyserver.UDPConn, error) {
-	if r.pickLocal(reqAddr) || r.nextAddr == "" || r.chain == nil {
+	if r.useDirect(reqAddr) {
 		return r.direct.UDP(reqAddr)
 	}
 	return r.chain.UDP(reqAddr)
 }
 
 func (r *entryRouter) CheckUDPOut(reqAddr string) error {
-	if r.pickLocal(reqAddr) || r.nextAddr == "" || r.chain == nil {
+	if r.useDirect(reqAddr) {
 		return r.direct.CheckUDP(reqAddr)
 	}
 	return r.chain.CheckUDP(reqAddr)

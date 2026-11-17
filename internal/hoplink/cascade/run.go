@@ -117,7 +117,7 @@ func Run(listen, role, password, sni, certPath, keyPath, certDir, usersFile, nex
 	defer stop()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve() }()
-	log.Infof("[HY2_CASCADE_START] role=%s listen=%s next=%s domain_rules=%d sni_rules=%d obfs=%s", role, listen, nextAddr, len(domainPatterns.patterns), len(sniPatterns.patterns), obfsMode)
+	log.Infof("[HY2_CASCADE_START] role=%s listen=%s next=%s domain_rules=%d sni_rules=%d obfs=%s", role, listen, nextAddr, domainPatterns.RuleCount(), sniPatterns.RuleCount(), obfsMode)
 	select {
 	case <-ctx.Done():
 		_ = srv.Close()

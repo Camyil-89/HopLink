@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"math/big"
 	"net"
@@ -22,6 +23,24 @@ const (
 	geckoMaxPacketSize = 1200
 	maxUDPPacketSize   = 65535
 )
+
+var (
+	wirePool = sync.Pool{
+		New: func() any { return make([]byte, 0, geckoMaxPacketSize) },
+	}
+	hashPool = sync.Pool{
+		New: func() any {
+			h, _ := blake2b.New256(nil)
+			return h
+		},
+	}
+)
+
+func releaseWire(wire []byte) {
+	if wire != nil {
+		wirePool.Put(wire[:0])
+	}
+}
 
 // PacketConn implements Hysteria v2 Salamander and Gecko at the UDP boundary.
 // Intermediate relays keep these packets opaque.
@@ -84,15 +103,26 @@ func (c *PacketConn) ReadFrom(out []byte) (int, net.Addr, error) {
 			log.Tracef("[HY2_UDP_DROP] peer=%s wire_bytes=%d reason=invalid_obfs_packet obfs=%s", addr, n, c.mode)
 			continue
 		}
+		pooledPlain := plain
+		releasePooled := true
 		if c.mode == "gecko" {
 			plain, ok = c.ungecko(plain, addr)
 			if !ok {
+				releaseWire(pooledPlain)
 				log.Tracef("[HY2_UDP_FRAGMENT_PENDING_OR_DROP] peer=%s wire_bytes=%d obfs=%s", addr, n, c.mode)
 				continue
 			}
+			if cap(plain) != cap(pooledPlain) {
+				releaseWire(pooledPlain)
+				releasePooled = false
+			}
 		}
 		log.Tracef("[HY2_UDP_DEOBFS] peer=%s packet_bytes=%d obfs=%s", addr, len(plain), c.mode)
-		return copy(out, plain), addr, nil
+		copied := copy(out, plain)
+		if releasePooled {
+			releaseWire(pooledPlain)
+		}
+		return copied, addr, nil
 	}
 }
 
@@ -107,6 +137,7 @@ func (c *PacketConn) WriteTo(packet []byte, addr net.Addr) (int, error) {
 		return 0, err
 	}
 	_, err = c.pc.WriteTo(wire, addr)
+	releaseWire(wire)
 	if err != nil {
 		log.Warnf("[HY2_UDP_WRITE_ERROR] peer=%s packet_bytes=%d wire_bytes=%d obfs=%s err=%v", addr, len(packet), len(wire), c.mode, err)
 		return 0, err
@@ -116,13 +147,19 @@ func (c *PacketConn) WriteTo(packet []byte, addr net.Addr) (int, error) {
 }
 
 func (c *PacketConn) mask(packet []byte) ([]byte, error) {
-	salt := make([]byte, SalamanderSaltSize)
-	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+	need := SalamanderSaltSize + len(packet)
+	wire := wirePool.Get().([]byte)
+	if cap(wire) < need {
+		wirePool.Put(wire[:0])
+		wire = make([]byte, need)
+	} else {
+		wire = wire[:need]
+	}
+	if _, err := io.ReadFull(rand.Reader, wire[:SalamanderSaltSize]); err != nil {
+		releaseWire(wire)
 		return nil, err
 	}
-	hash := salamanderHash(c.password, salt)
-	wire := make([]byte, SalamanderSaltSize+len(packet))
-	copy(wire, salt)
+	hash := salamanderHash(c.password, wire[:SalamanderSaltSize])
 	for i, value := range packet {
 		wire[SalamanderSaltSize+i] = value ^ hash[i%len(hash)]
 	}
@@ -135,19 +172,30 @@ func (c *PacketConn) unmask(wire []byte) ([]byte, bool) {
 	}
 	salt := wire[:SalamanderSaltSize]
 	hash := salamanderHash(c.password, salt)
-	plain := make([]byte, len(wire)-SalamanderSaltSize)
-	for i, value := range wire[SalamanderSaltSize:] {
-		plain[i] = value ^ hash[i%len(hash)]
+	plainLen := len(wire) - SalamanderSaltSize
+	plain := wirePool.Get().([]byte)
+	if cap(plain) < plainLen {
+		wirePool.Put(plain[:0])
+		plain = make([]byte, plainLen)
+	} else {
+		plain = plain[:plainLen]
+	}
+	payload := wire[SalamanderSaltSize:]
+	for i := range plain {
+		plain[i] = payload[i] ^ hash[i%len(hash)]
 	}
 	return plain, true
 }
 
-func salamanderHash(password, salt []byte) []byte {
-	data := make([]byte, 0, len(password)+len(salt))
-	data = append(data, password...)
-	data = append(data, salt...)
-	hash := blake2b.Sum256(data)
-	return hash[:]
+func salamanderHash(password, salt []byte) [32]byte {
+	h := hashPool.Get().(hash.Hash)
+	h.Reset()
+	_, _ = h.Write(password)
+	_, _ = h.Write(salt)
+	var sum [32]byte
+	h.Sum(sum[:0])
+	hashPool.Put(h)
+	return sum
 }
 
 func (c *PacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
@@ -222,8 +270,10 @@ func (c *PacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
 			return 0, err
 		}
 		if _, err = c.pc.WriteTo(wire, addr); err != nil {
+			releaseWire(wire)
 			return 0, err
 		}
+		releaseWire(wire)
 	}
 	return len(packet), nil
 }
