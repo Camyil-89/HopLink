@@ -54,8 +54,12 @@ func TestHostFromReqAddr(t *testing.T) {
 }
 
 func TestParseTLSSNI(t *testing.T) {
-	// Minimal fake ClientHello is brittle; verify non-TLS returns false.
 	if _, ok := parseTLSSNI([]byte("GET /")); ok {
 		t.Fatal("expected no SNI for HTTP")
+	}
+	record := minimalTLSClientHello("edge.example.ru")
+	host, ok := parseTLSSNI(record)
+	if !ok || host != "edge.example.ru" {
+		t.Fatalf("SNI parse got %q ok=%v", host, ok)
 	}
 }

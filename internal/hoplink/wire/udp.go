@@ -30,20 +30,16 @@ func Read(r io.Reader) (string, []byte, error) {
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
 		return "", nil, err
 	}
-	srcLen := binary.BigEndian.Uint16(hdr[0:2])
+	srcLen := int(binary.BigEndian.Uint16(hdr[0:2]))
 	payLen := binary.BigEndian.Uint32(hdr[2:6])
 	if payLen > MaxPayload {
 		return "", nil, fmt.Errorf("relay udp payload too large")
 	}
-	srcBuf := make([]byte, srcLen)
-	if _, err := io.ReadFull(r, srcBuf); err != nil {
+	body := make([]byte, srcLen+int(payLen))
+	if _, err := io.ReadFull(r, body); err != nil {
 		return "", nil, err
 	}
-	payload := make([]byte, payLen)
-	if _, err := io.ReadFull(r, payload); err != nil {
-		return "", nil, err
-	}
-	return string(srcBuf), payload, nil
+	return string(body[:srcLen]), body[srcLen:], nil
 }
 
 func EncodeBytes(src string, payload []byte) ([]byte, error) {

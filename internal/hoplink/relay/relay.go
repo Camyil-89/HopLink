@@ -18,10 +18,35 @@ import (
 
 const (
 	DefaultIdleTimeout = 30 * time.Second
-	queueSize          = 8
+	queueSize          = 32
 	maxUDPPacketSize   = 65535
 	maxQueuedBytes     = 16 << 20
 )
+
+var packetPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 0, 1500)
+	},
+}
+
+func clonePacket(src []byte) []byte {
+	buf := packetPool.Get().([]byte)
+	if cap(buf) < len(src) {
+		packetPool.Put(buf[:0])
+		buf = make([]byte, len(src))
+	} else {
+		buf = buf[:len(src)]
+	}
+	copy(buf, src)
+	return buf
+}
+
+func releasePacket(packet []byte) {
+	if packet == nil {
+		return
+	}
+	packetPool.Put(packet[:0])
+}
 
 // Upstream carries relay traffic over SSH instead of raw UDP to the next hop.
 type Upstream interface {
@@ -144,27 +169,33 @@ func (r *Relay) Serve(ctx context.Context) error {
 		if s == nil {
 			continue
 		}
-		s.offer(buf[:n])
+		packet := clonePacket(buf[:n])
+		s.offer(packet)
 	}
 }
 
 func (s *session) offer(packet []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed || len(s.queue) == cap(s.queue) {
-		return
-	}
 	n := int64(len(packet))
 	for {
 		used := s.relay.queuedBytes.Load()
 		if used+n > maxQueuedBytes {
+			releasePacket(packet)
 			return
 		}
 		if s.relay.queuedBytes.CompareAndSwap(used, used+n) {
 			break
 		}
 	}
-	s.queue <- append([]byte(nil), packet...)
+
+	select {
+	case s.queue <- packet:
+	case <-s.done:
+		s.relay.queuedBytes.Add(-n)
+		releasePacket(packet)
+	default:
+		s.relay.queuedBytes.Add(-n)
+		releasePacket(packet)
+	}
 }
 
 func IsQUICInitial(p []byte) bool {
@@ -233,6 +264,7 @@ func (s *session) close() {
 			select {
 			case packet := <-s.queue:
 				s.relay.queuedBytes.Add(-int64(len(packet)))
+				releasePacket(packet)
 			default:
 				break cleanup
 			}
@@ -264,10 +296,10 @@ func (s *session) send() {
 			if s.relay.upstream != nil {
 				err = s.relay.upstream.Write(s.peer, packet)
 			} else {
-				_ = s.conn.SetWriteDeadline(time.Now().Add(time.Second))
 				_, err = s.conn.Write(packet)
 			}
 			s.relay.queuedBytes.Add(-int64(len(packet)))
+			releasePacket(packet)
 			if err != nil {
 				log.Warnf("[UDP_RELAY_SEND_ERROR] peer=%s target=%s err=%v", s.peer, s.relay.target, err)
 				return
@@ -311,12 +343,15 @@ func (s *session) receive() {
 		}
 	}
 	buf := make([]byte, maxUDPPacketSize)
+	deadline := time.Now().Add(s.relay.idleTimeout)
+	_ = s.conn.SetReadDeadline(deadline)
 	for {
-		_ = s.conn.SetReadDeadline(time.Now().Add(s.relay.idleTimeout))
 		n, err := s.conn.Read(buf)
 		if err != nil {
 			var timeout net.Error
 			if errors.As(err, &timeout) && timeout.Timeout() && time.Since(time.Unix(0, s.lastSeen.Load())) < s.relay.idleTimeout {
+				deadline = time.Now().Add(s.relay.idleTimeout)
+				_ = s.conn.SetReadDeadline(deadline)
 				continue
 			}
 			log.Debugf("[UDP_RELAY_UPSTREAM_CLOSED] peer=%s target=%s err=%v", s.peer, s.relay.target, err)
@@ -327,6 +362,8 @@ func (s *session) receive() {
 		if _, err := s.relay.conn.WriteToUDPAddrPort(buf[:n], s.peer); err != nil {
 			return
 		}
+		deadline = time.Now().Add(s.relay.idleTimeout)
+		_ = s.conn.SetReadDeadline(deadline)
 	}
 }
 
