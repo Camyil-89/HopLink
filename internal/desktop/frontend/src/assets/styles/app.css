@@ -900,6 +900,38 @@ td b {
 .settings-card {
   padding: 18px;
 }
+.cascade-rules-import {
+  margin-bottom: 14px;
+}
+.cascade-rules-import-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #e6e8ee;
+  border-radius: 8px;
+  background: #fafbfd;
+}
+.cascade-rules-import-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+.cascade-rules-import .inline-field {
+  margin-bottom: 0;
+  min-width: 160px;
+}
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: #71798a;
+  margin-bottom: 8px;
+}
+.field-hint.import-error {
+  color: #c0392b;
+}
 .settings-section {
   display: flex;
   align-items: center;

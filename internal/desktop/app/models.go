@@ -60,7 +60,10 @@ type AppConfig struct {
 	LogLevel        string            `json:"logLevel,omitempty"`
 	ObfsType        string            `json:"obfsType,omitempty"`
 	ObfsPassword    string            `json:"obfsPassword,omitempty"`
-	RelayTransport  string            `json:"relayTransport,omitempty"`
+	RelayTransport        string            `json:"relayTransport,omitempty"`
+	ChainMode             string            `json:"chainMode,omitempty"`
+	CascadeDomainPatterns string            `json:"cascadeDomainPatterns,omitempty"`
+	CascadeSNIPatterns    string            `json:"cascadeSNIPatterns,omitempty"`
 	RelayTransportClientKey string    `json:"relayTransportClientKey,omitempty"`
 	RelayTransportClientPub string    `json:"relayTransportClientPub,omitempty"`
 	RelayTransportHostKey   string    `json:"relayTransportHostKey,omitempty"`
@@ -87,6 +90,9 @@ type Route struct {
 	ObfsType        string   `json:"obfsType,omitempty"`
 	ObfsPassword    string   `json:"obfsPassword,omitempty"`
 	RelayTransport  string   `json:"relayTransport,omitempty"`
+	ChainMode               string `json:"chainMode,omitempty"`
+	CascadeDomainPatterns   string `json:"cascadeDomainPatterns,omitempty"`
+	CascadeSNIPatterns      string `json:"cascadeSNIPatterns,omitempty"`
 	RelayTransportClientKey string `json:"relayTransportClientKey,omitempty"`
 	RelayTransportClientPub string `json:"relayTransportClientPub,omitempty"`
 	RelayTransportHostKey   string `json:"relayTransportHostKey,omitempty"`

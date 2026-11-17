@@ -282,6 +282,9 @@ func (a *App) storeActiveRouteLocked() {
 		route.LogLevel = a.config.LogLevel
 		route.ObfsType, route.ObfsPassword = a.config.ObfsType, a.config.ObfsPassword
 		route.RelayTransport = a.config.RelayTransport
+		route.ChainMode = a.config.ChainMode
+		route.CascadeDomainPatterns = a.config.CascadeDomainPatterns
+		route.CascadeSNIPatterns = a.config.CascadeSNIPatterns
 		route.RelayTransportClientKey = a.config.RelayTransportClientKey
 		route.RelayTransportClientPub = a.config.RelayTransportClientPub
 		route.RelayTransportHostKey = a.config.RelayTransportHostKey
@@ -305,6 +308,9 @@ func (a *App) loadActiveRouteLocked() {
 		a.config.LogLevel = route.LogLevel
 		a.config.ObfsType, a.config.ObfsPassword = route.ObfsType, route.ObfsPassword
 		a.config.RelayTransport = route.RelayTransport
+		a.config.ChainMode = route.ChainMode
+		a.config.CascadeDomainPatterns = route.CascadeDomainPatterns
+		a.config.CascadeSNIPatterns = route.CascadeSNIPatterns
 		a.config.RelayTransportClientKey = route.RelayTransportClientKey
 		a.config.RelayTransportClientPub = route.RelayTransportClientPub
 		a.config.RelayTransportHostKey = route.RelayTransportHostKey

@@ -26,6 +26,9 @@ export function routeSnapshot(
     obfsType?: string;
     obfsPassword?: string;
     relayTransport?: string;
+    chainMode?: string;
+    cascadeDomainPatterns?: string;
+    cascadeSNIPatterns?: string;
   },
 ) {
   return JSON.stringify({
@@ -52,6 +55,9 @@ export function routeSnapshot(
       obfsType: settings.obfsType || "",
       obfsPassword: settings.obfsPassword || "",
       relayTransport: settings.relayTransport || "udp",
+      chainMode: settings.chainMode || "udp-relay",
+      cascadeDomainPatterns: settings.cascadeDomainPatterns || "",
+      cascadeSNIPatterns: settings.cascadeSNIPatterns || "",
     },
   });
 }

@@ -33,7 +33,8 @@ func (a *App) SaveServers(servers []Server) (AppConfig, error) {
 			}
 		}
 	}
-	a.config.Servers = servers
+	a.config.Servers = append([]Server{}, servers...)
+	a.syncServersLibraryLocked()
 	return a.config, a.saveLocked()
 }
 

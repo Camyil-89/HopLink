@@ -1,4 +1,5 @@
 import { KeyRound, Radio, ShieldCheck, X } from "lucide-react";
+import { CascadeRulesImport } from "../components/CascadeRulesImport";
 import type { AppState } from "../types/app";
 import { generatePassword } from "../utils/password";
 
@@ -46,6 +47,67 @@ export function SettingsTab({
               <small>Параметры входного и межсерверных подключений.</small>
             </div>
           </div>
+          <label className="field">
+            Режим цепочки
+            <select
+              value={state.chainMode || "udp-relay"}
+              onChange={(event) =>
+                onChange({ chainMode: event.target.value as AppState["chainMode"] })
+              }
+            >
+              <option value="udp-relay">
+                UDP-реле (сквозное шифрование до выхода)
+              </option>
+              <option value="hy2-cascade">
+                Каскад HY2 (VPN на каждом hop, сертификат на входе)
+              </option>
+            </select>
+            <small className="field-hint">
+              В каскадном режиме клиентские ссылки всегда ведут на входной узел;
+              сертификат и пользователи тоже ставятся на вход.
+            </small>
+          </label>
+          {(state.chainMode || "udp-relay") === "hy2-cascade" && (
+            <>
+              <CascadeRulesImport
+                domainPatterns={state.cascadeDomainPatterns || ""}
+                sniPatterns={state.cascadeSNIPatterns || ""}
+                onChange={onChange}
+              />
+              <label className="field">
+                Прямой выход с входа: домены (по строке)
+                <textarea
+                  rows={4}
+                  value={state.cascadeDomainPatterns || ""}
+                  onChange={(event) =>
+                    onChange({ cascadeDomainPatterns: event.target.value })
+                  }
+                  placeholder={"domain:ru\\ndomain:yandex.ru"}
+                />
+                <small className="field-hint">
+                  По строке: regex, либо{" "}
+                  <code>domain:имя</code>, <code>keyword:текст</code>,{" "}
+                  <code>full:хост</code> (как в sing-box/Clash). Не совпавший
+                  трафик уходит дальше по цепочке.
+                </small>
+              </label>
+              <label className="field">
+                Прямой выход с входа: SNI TLS (по строке)
+                <textarea
+                  rows={4}
+                  value={state.cascadeSNIPatterns || ""}
+                  onChange={(event) =>
+                    onChange({ cascadeSNIPatterns: event.target.value })
+                  }
+                  placeholder={"(?i)\\.ru$"}
+                />
+                <small className="field-hint">
+                  Для TCP проверяется SNI из ClientHello. Пустые списки — весь
+                  трафик через следующий hop.
+                </small>
+              </label>
+            </>
+          )}
           <label className="field">
             SNI
             <input
@@ -104,6 +166,7 @@ export function SettingsTab({
             Транспорт между реле
             <select
               value={state.relayTransport || "udp"}
+              disabled={(state.chainMode || "udp-relay") === "hy2-cascade"}
               onChange={(event) =>
                 onChange({
                   relayTransport: event.target
@@ -118,7 +181,9 @@ export function SettingsTab({
               </option>
             </select>
             <small className="field-hint">
-              {state.relayTransport === "ws"
+              {(state.chainMode || "udp-relay") === "hy2-cascade"
+                ? "В каскадном режиме межсерверные подключения — отдельные сессии Hysteria2 по UDP."
+                : state.relayTransport === "ws"
                 ? `WSS между реле шифруется основным TLS-сертификатом маршрута. Порт транспорта: ${(state.port || 22033) + 1}.`
                 : state.relayTransport === "ssh"
                   ? `SSH режим передаёт QUIC-пакеты между узлами через зашифрованный канал; порт SSH-транспорта: ${(state.port || 22033) + 1}.`

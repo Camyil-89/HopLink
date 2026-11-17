@@ -16,6 +16,19 @@ import (
 	"time"
 )
 
+func TestCascadeNodeArgsEntryHostsCredentials(t *testing.T) {
+	cfg := AppConfig{Port: 22033, SNI: "example.com", ChainMode: ChainModeCascade, CascadeDomainPatterns: "(?i)\\.ru$"}
+	order := []Server{{Host: "entry.example"}, {Host: "exit.example"}}
+	entry := routeNodeArgs(cfg, order, 0, "/opt/route")
+	if !containsAll(entry, "-mode", "hy2-cascade", "-cascade-role", "entry", "-hy2-users-file", "/opt/route/users.txt", "-cascade-next", "exit.example:22033") {
+		t.Fatalf("entry args = %v", entry)
+	}
+	exit := routeNodeArgs(cfg, order, 1, "/opt/route")
+	if !containsAll(exit, "-cascade-role", "exit") || strings.Contains(strings.Join(exit, " "), "-hy2-users-file") {
+		t.Fatalf("exit args = %v", exit)
+	}
+}
+
 func TestRouteNodeArgsSSHTransport(t *testing.T) {
 	cfg := AppConfig{Port: 22033, SNI: "example.com", RelayTransport: "ssh"}
 	order := []Server{{Host: "entry.example"}, {Host: "middle.example"}, {Host: "exit.example"}}
