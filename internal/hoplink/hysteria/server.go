@@ -304,6 +304,10 @@ func ExitServerConfig(pc net.PacketConn, certs []tls.Certificate, password strin
 		EventLogger:           events{},
 		IgnoreClientBandwidth: true,
 		CongestionConfig:      hyserver.CongestionConfig{Type: "bbr", BBRProfile: "conservative"},
+		QUICConfig: hyserver.QUICConfig{
+			// Default hysteria cap (1024) is tight for launchers that open many parallel TCP streams.
+			MaxIncomingStreams: 1 << 16,
+		},
 	}
 }
 

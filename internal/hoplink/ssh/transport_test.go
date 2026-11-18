@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -55,29 +56,38 @@ func TestUDPRelayOpaqueEcho(t *testing.T) {
 
 	echo := udpEcho(t)
 	downstream := startTestRelay(t, echo.LocalAddr().String(), relay.DefaultIdleTimeout)
-	sshListen, err := net.Listen("tcp", "127.0.0.1:0")
+	// Reserve a free port, then release it so StartServer can own the listener.
+	// Keeping sshListen open while StartServer binds the same addr leaves a TCP
+	// socket that never Accept()s — ssh.Dial then hangs until the client timeout.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	sshAddr := probe.Addr().String()
+	_ = probe.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
 		_ = StartServer(ctx, ServerConfig{
-			Listen:             sshListen.Addr().String(),
+			Listen:             sshAddr,
 			HostKeyFile:        hostKeyPath,
 			AuthorizedKeysFile: authPath,
 			LocalUDPPort:       downstream.LocalAddr().(*net.UDPAddr).Port,
 			IdleTimeout:        time.Second,
 		})
 	}()
+	if err := waitTCPReady(sshAddr, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
 	upstream, err := NewUpstream(ctx, ClientConfig{
-		NextAddr:       sshListen.Addr().String(),
+		NextAddr:       sshAddr,
 		ClientKeyFile:  clientKeyPath,
 		HostPubKeyFile: hostPubPath,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { upstream.Close() })
 	entry, err := relay.NewWithTransport("127.0.0.1:0", "", relay.DefaultIdleTimeout, "", true)
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +120,19 @@ func TestUDPRelayOpaqueEcho(t *testing.T) {
 	if err != nil || !bytes.Equal(buf[:n], initial) {
 		t.Fatalf("ssh relay opaque echo failed: n=%d err=%v", n, err)
 	}
+}
+
+func waitTCPReady(addr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 250*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return fmt.Errorf("ssh listen %s not ready within %v", addr, timeout)
 }
 
 func udpEcho(t *testing.T) *net.UDPConn {

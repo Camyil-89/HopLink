@@ -19,8 +19,8 @@ import (
 
 type obfsClientConnFactory struct{ mode, password string }
 
-func (f obfsClientConnFactory) New(addr net.Addr) (net.PacketConn, error) {
-	pc, err := net.ListenPacket("udp", addr.String())
+func (f obfsClientConnFactory) New(_ net.Addr) (net.PacketConn, error) {
+	pc, err := net.ListenUDP("udp", nil)
 	if err != nil {
 		return nil, err
 	}
