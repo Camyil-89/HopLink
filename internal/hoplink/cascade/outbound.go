@@ -3,18 +3,12 @@ package cascade
 import (
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"hoplink/internal/hoplink/log"
 
 	hyclient "github.com/apernet/hysteria/core/v2/client"
 	hyserver "github.com/apernet/hysteria/core/v2/server"
-)
-
-const (
-	routeValid = uint32(1 << 0)
-	routeLocal = uint32(1 << 1)
 )
 
 var tcpSniffPool = sync.Pool{
@@ -125,8 +119,8 @@ type entryRouter struct {
 	direct         *directOutbound
 	chain          *chainOutbound
 
-	routeState atomic.Uint32
-	forceLocal   bool
+	pending    pendingRoutes
+	forceLocal bool
 }
 
 func newEntryRouter(next string, domainPatterns, sniPatterns Matcher, chain *chainOutbound) *entryRouter {
@@ -135,6 +129,7 @@ func newEntryRouter(next string, domainPatterns, sniPatterns Matcher, chain *cha
 		sniPatterns:    sniPatterns,
 		direct:         newDirectOutbound(),
 		chain:          chain,
+		pending:        newPendingRoutes(),
 		forceLocal:     next == "",
 	}
 }
@@ -150,11 +145,7 @@ func (r *entryRouter) localForAddr(host, sni string) bool {
 }
 
 func (r *entryRouter) storeRoute(local bool) {
-	v := routeValid
-	if local {
-		v |= routeLocal
-	}
-	r.routeState.Store(v)
+	r.pending.store(parseCurrentGoroutineID(), local)
 }
 
 func (r *entryRouter) Check(isUDP bool, _ string) bool {
@@ -207,8 +198,8 @@ func (r *entryRouter) pickLocal(reqAddr string) bool {
 	if !r.domainPatterns.HasRules() && !r.sniPatterns.HasRules() {
 		return false
 	}
-	if v := r.routeState.Swap(0); v&routeValid != 0 {
-		return v&routeLocal != 0
+	if local, ok := r.pending.take(parseCurrentGoroutineID()); ok {
+		return local
 	}
 	host := hostFromReqAddr(reqAddr)
 	return r.localForAddr(host, "")
