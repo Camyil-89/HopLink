@@ -34,7 +34,7 @@ func (a *App) SaveMap(servers []Server, edges []Edge) (AppConfig, error) {
 	}
 	return a.config, nil
 }
-func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey, logLevel, obfsType, obfsPassword, relayTransport, chainMode, cascadeDomainPatterns, cascadeSNIPatterns string) (AppConfig, error) {
+func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port int, entryDomain, chainKey, cert, certKey, logLevel, obfsType, obfsPassword, relayTransport, chainMode, cascadeDomainPatterns, cascadeSNIPatterns string, disableServerPing bool) (AppConfig, error) {
 	if err := validateMap(servers, edges); err != nil {
 		return a.GetState(), err
 	}
@@ -101,6 +101,7 @@ func (a *App) SaveRouteDraft(servers []Server, edges []Edge, sni string, port in
 	a.config.ChainMode = chainMode
 	a.config.CascadeDomainPatterns = cascadeDomainPatterns
 	a.config.CascadeSNIPatterns = cascadeSNIPatterns
+	a.config.DisableServerPing = disableServerPing
 	return a.config, a.saveLocked()
 }
 func (a *App) clearRouteMigrationLayoutsLocked(routeID string) {

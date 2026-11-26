@@ -6,6 +6,7 @@ import { DeleteRouteModal } from "../modals/DeleteRouteModal";
 import { RemoveRouteServiceModal } from "../modals/RemoveRouteServiceModal";
 import { RouteJournalModal } from "../modals/RouteJournalModal";
 import { ClearMapModal } from "../modals/ClearMapModal";
+import { ApplyOrphanCleanupModal } from "../modals/ApplyOrphanCleanupModal";
 import { ServerModal } from "../modals/ServerModal";
 import { UserModal } from "../modals/UserModal";
 import { UserLinksModal } from "../modals/UserLinksModal";
@@ -61,6 +62,15 @@ export function AppModals({ app }: Props) {
               until,
             )
           }
+        />
+      )}
+      {app.applyOrphanServers && app.applyOrphanServers.length > 0 && (
+        <ApplyOrphanCleanupModal
+          servers={app.applyOrphanServers}
+          choices={app.applyOrphanChoices}
+          onChoice={app.setApplyOrphanChoice}
+          onCancel={app.cancelApplyOrphanPrompt}
+          onConfirm={() => void app.confirmApplyOrphanPrompt()}
         />
       )}
       {app.clearMapConfirm && (

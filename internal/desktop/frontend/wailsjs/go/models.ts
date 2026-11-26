@@ -23,6 +23,7 @@ export namespace desktop {
 	    chainMode?: string;
 	    cascadeDomainPatterns?: string;
 	    cascadeSNIPatterns?: string;
+	    disableServerPing?: boolean;
 	    relayTransportClientKey?: string;
 	    relayTransportClientPub?: string;
 	    relayTransportHostKey?: string;
@@ -56,6 +57,7 @@ export namespace desktop {
 	        this.chainMode = source["chainMode"];
 	        this.cascadeDomainPatterns = source["cascadeDomainPatterns"];
 	        this.cascadeSNIPatterns = source["cascadeSNIPatterns"];
+	        this.disableServerPing = source["disableServerPing"];
 	        this.relayTransportClientKey = source["relayTransportClientKey"];
 	        this.relayTransportClientPub = source["relayTransportClientPub"];
 	        this.relayTransportHostKey = source["relayTransportHostKey"];
@@ -171,6 +173,7 @@ export namespace desktop {
 	    chainMode?: string;
 	    cascadeDomainPatterns?: string;
 	    cascadeSNIPatterns?: string;
+	    disableServerPing?: boolean;
 	    relayTransportClientKey?: string;
 	    relayTransportClientPub?: string;
 	    relayTransportHostKey?: string;
@@ -205,6 +208,7 @@ export namespace desktop {
 	        this.chainMode = source["chainMode"];
 	        this.cascadeDomainPatterns = source["cascadeDomainPatterns"];
 	        this.cascadeSNIPatterns = source["cascadeSNIPatterns"];
+	        this.disableServerPing = source["disableServerPing"];
 	        this.relayTransportClientKey = source["relayTransportClientKey"];
 	        this.relayTransportClientPub = source["relayTransportClientPub"];
 	        this.relayTransportHostKey = source["relayTransportHostKey"];

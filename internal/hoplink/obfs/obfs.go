@@ -5,12 +5,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
-	"math/big"
 	"net"
 	"sync"
 	"time"
+	"unsafe"
 
 	"hoplink/internal/hoplink/log"
 
@@ -22,37 +21,71 @@ const (
 	GeckoMinPacketSize = 512
 	geckoMaxPacketSize = 1200
 	maxUDPPacketSize   = 65535
+
+	modeSalamander byte = 1
+	modeGecko      byte = 2
 )
 
 var (
 	wirePool = sync.Pool{
-		New: func() any { return make([]byte, 0, geckoMaxPacketSize) },
-	}
-	hashPool = sync.Pool{
 		New: func() any {
-			h, _ := blake2b.New256(nil)
-			return h
+			b := make([]byte, 0, 2048)
+			return &b
+		},
+	}
+	datagramPool = sync.Pool{
+		New: func() any {
+			b := make([]byte, maxUDPPacketSize)
+			return &b
 		},
 	}
 )
 
-func releaseWire(wire []byte) {
-	if wire != nil {
-		wirePool.Put(wire[:0])
+func getWire(n int) (bufp *[]byte, buf []byte) {
+	bufp = wirePool.Get().(*[]byte)
+	buf = *bufp
+	if cap(buf) < n {
+		b := make([]byte, n)
+		return &b, b
 	}
+	return bufp, buf[:n]
+}
+
+func putWire(bufp *[]byte) {
+	if bufp == nil {
+		return
+	}
+	*bufp = (*bufp)[:0]
+	wirePool.Put(bufp)
 }
 
 // PacketConn implements Hysteria v2 Salamander and Gecko at the UDP boundary.
 // Intermediate relays keep these packets opaque.
+//
+// Read and write locks sit on separate cache lines so a reader and a writer
+// on the same socket do not false-share. mode is a byte so the salamander
+// path is a single predicted compare. The 4 KiB salt block stays at the end
+// so it does not push the hot fields out of the first lines.
 type PacketConn struct {
-	pc       net.PacketConn
-	mode     string
-	password []byte
-	writeMu  sync.Mutex
-	readMu   sync.Mutex
-	queue    []queuedPacket
-	msgID    byte
-	pending  map[string]*geckoAssembly
+	readMu      sync.Mutex
+	mode        byte
+	readScratch []byte
+	_           [64]byte
+
+	writeMu      sync.Mutex
+	saltOff      int
+	msgID        byte
+	writeScratch []byte
+	pc           net.PacketConn
+	queue        []queuedPacket
+	pending      map[geckoKey]*geckoAssembly
+	modeName     string
+	salt         [4096]byte
+}
+
+type geckoKey struct {
+	addr string
+	id   byte
 }
 
 type queuedPacket struct {
@@ -77,7 +110,26 @@ func NewPacketConn(pc net.PacketConn, mode, password string) (net.PacketConn, er
 	if len([]byte(password)) < 4 {
 		return nil, errors.New("UDP obfuscation password must contain at least 4 bytes")
 	}
-	return &PacketConn{pc: pc, mode: mode, password: []byte(password), pending: make(map[string]*geckoAssembly)}, nil
+	pw := []byte(password)
+	readScratch := make([]byte, len(pw)+SalamanderSaltSize)
+	writeScratch := make([]byte, len(pw)+SalamanderSaltSize)
+	copy(readScratch, pw)
+	copy(writeScratch, pw)
+	var modeByte byte
+	switch mode {
+	case "salamander":
+		modeByte = modeSalamander
+	case "gecko":
+		modeByte = modeGecko
+	}
+	return &PacketConn{
+		pc:           pc,
+		mode:         modeByte,
+		modeName:     mode,
+		readScratch:  readScratch,
+		writeScratch: writeScratch,
+		pending:      make(map[geckoKey]*geckoAssembly),
+	}, nil
 }
 
 func (c *PacketConn) ReadFrom(out []byte) (int, net.Addr, error) {
@@ -89,38 +141,57 @@ func (c *PacketConn) ReadFrom(out []byte) (int, net.Addr, error) {
 			c.queue = c.queue[1:]
 			return copy(out, p.data), p.addr, nil
 		}
-		wire := make([]byte, maxUDPPacketSize)
+		wirep := datagramPool.Get().(*[]byte)
+		wire := *wirep
 		n, addr, err := c.pc.ReadFrom(wire)
 		if err != nil {
+			datagramPool.Put(wirep)
 			if !errors.Is(err, net.ErrClosed) {
 				log.Warnf("[HY2_UDP_READ_ERROR] peer=%s err=%v", addr, err)
 			}
 			return 0, addr, err
 		}
-		log.Tracef("[HY2_UDP_RX] peer=%s wire_bytes=%d obfs=%s", addr, n, c.mode)
-		plain, ok := c.unmask(wire[:n])
+		if log.TraceEnabled() {
+			log.Tracef("[HY2_UDP_RX] peer=%s wire_bytes=%d obfs=%s", addr, n, c.modeName)
+		}
+		if c.mode == modeSalamander {
+			copied, ok := c.unmaskInto(wire[:n], out)
+			datagramPool.Put(wirep)
+			if !ok {
+				if log.TraceEnabled() {
+					log.Tracef("[HY2_UDP_DROP] peer=%s wire_bytes=%d reason=invalid_obfs_packet obfs=%s", addr, n, c.modeName)
+				}
+				continue
+			}
+			return copied, addr, nil
+		}
+		plainp, plain, ok := c.unmask(wire[:n])
+		datagramPool.Put(wirep)
 		if !ok {
-			log.Tracef("[HY2_UDP_DROP] peer=%s wire_bytes=%d reason=invalid_obfs_packet obfs=%s", addr, n, c.mode)
+			if log.TraceEnabled() {
+				log.Tracef("[HY2_UDP_DROP] peer=%s wire_bytes=%d reason=invalid_obfs_packet obfs=%s", addr, n, c.modeName)
+			}
 			continue
 		}
 		pooledPlain := plain
-		releasePooled := true
-		if c.mode == "gecko" {
-			plain, ok = c.ungecko(plain, addr)
-			if !ok {
-				releaseWire(pooledPlain)
-				log.Tracef("[HY2_UDP_FRAGMENT_PENDING_OR_DROP] peer=%s wire_bytes=%d obfs=%s", addr, n, c.mode)
-				continue
+		plain, ok = c.ungecko(plain, addr)
+		if !ok {
+			putWire(plainp)
+			if log.TraceEnabled() {
+				log.Tracef("[HY2_UDP_FRAGMENT_PENDING_OR_DROP] peer=%s wire_bytes=%d obfs=%s", addr, n, c.modeName)
 			}
-			if cap(plain) != cap(pooledPlain) {
-				releaseWire(pooledPlain)
-				releasePooled = false
-			}
+			continue
 		}
-		log.Tracef("[HY2_UDP_DEOBFS] peer=%s packet_bytes=%d obfs=%s", addr, len(plain), c.mode)
+		releasePooled := cap(plain) == cap(pooledPlain)
+		if !releasePooled {
+			putWire(plainp)
+		}
+		if log.TraceEnabled() {
+			log.Tracef("[HY2_UDP_DEOBFS] peer=%s packet_bytes=%d obfs=%s", addr, len(plain), c.modeName)
+		}
 		copied := copy(out, plain)
 		if releasePooled {
-			releaseWire(pooledPlain)
+			putWire(plainp)
 		}
 		return copied, addr, nil
 	}
@@ -129,73 +200,102 @@ func (c *PacketConn) ReadFrom(out []byte) (int, net.Addr, error) {
 func (c *PacketConn) WriteTo(packet []byte, addr net.Addr) (int, error) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	if c.mode == "gecko" && len(packet) > 0 && packet[0]&0x80 != 0 {
+	if c.mode == modeGecko && len(packet) > 0 && packet[0]&0x80 != 0 {
 		return c.writeGecko(packet, addr)
 	}
-	wire, err := c.mask(packet)
+	wirep, wire, err := c.mask(packet)
 	if err != nil {
 		return 0, err
 	}
+	wireLen := len(wire)
 	_, err = c.pc.WriteTo(wire, addr)
-	releaseWire(wire)
+	putWire(wirep)
 	if err != nil {
-		log.Warnf("[HY2_UDP_WRITE_ERROR] peer=%s packet_bytes=%d wire_bytes=%d obfs=%s err=%v", addr, len(packet), len(wire), c.mode, err)
+		log.Warnf("[HY2_UDP_WRITE_ERROR] peer=%s packet_bytes=%d wire_bytes=%d obfs=%s err=%v", addr, len(packet), wireLen, c.modeName, err)
 		return 0, err
 	}
-	log.Tracef("[HY2_UDP_TX] peer=%s packet_bytes=%d wire_bytes=%d obfs=%s", addr, len(packet), len(wire), c.mode)
+	if log.TraceEnabled() {
+		log.Tracef("[HY2_UDP_TX] peer=%s packet_bytes=%d wire_bytes=%d obfs=%s", addr, len(packet), wireLen, c.modeName)
+	}
 	return len(packet), nil
 }
 
-func (c *PacketConn) mask(packet []byte) ([]byte, error) {
-	need := SalamanderSaltSize + len(packet)
-	wire := wirePool.Get().([]byte)
-	if cap(wire) < need {
-		wirePool.Put(wire[:0])
-		wire = make([]byte, need)
-	} else {
-		wire = wire[:need]
+func (c *PacketConn) mask(packet []byte) (bufp *[]byte, wire []byte, err error) {
+	bufp, wire = getWire(SalamanderSaltSize + len(packet))
+	if err = c.readSalt(wire[:SalamanderSaltSize]); err != nil {
+		putWire(bufp)
+		return nil, nil, err
 	}
-	if _, err := io.ReadFull(rand.Reader, wire[:SalamanderSaltSize]); err != nil {
-		releaseWire(wire)
-		return nil, err
-	}
-	hash := salamanderHash(c.password, wire[:SalamanderSaltSize])
-	for i, value := range packet {
-		wire[SalamanderSaltSize+i] = value ^ hash[i%len(hash)]
-	}
-	return wire, nil
+	sum := c.sumSalt(c.writeScratch, wire[:SalamanderSaltSize])
+	xorKeystream(wire[SalamanderSaltSize:], packet, &sum)
+	return bufp, wire, nil
 }
 
-func (c *PacketConn) unmask(wire []byte) ([]byte, bool) {
+func (c *PacketConn) sumSalt(scratch, salt []byte) [32]byte {
+	copy(scratch[len(scratch)-SalamanderSaltSize:], salt)
+	return blake2b.Sum256(scratch)
+}
+
+func (c *PacketConn) readSalt(dst []byte) error {
+	if c.saltOff+len(dst) > len(c.salt) {
+		if _, err := io.ReadFull(rand.Reader, c.salt[:]); err != nil {
+			return err
+		}
+		c.saltOff = 0
+	}
+	copy(dst, c.salt[c.saltOff:c.saltOff+len(dst)])
+	c.saltOff += len(dst)
+	return nil
+}
+
+func (c *PacketConn) unmaskInto(wire, out []byte) (int, bool) {
 	if len(wire) <= SalamanderSaltSize {
-		return nil, false
+		return 0, false
 	}
-	salt := wire[:SalamanderSaltSize]
-	hash := salamanderHash(c.password, salt)
 	plainLen := len(wire) - SalamanderSaltSize
-	plain := wirePool.Get().([]byte)
-	if cap(plain) < plainLen {
-		wirePool.Put(plain[:0])
-		plain = make([]byte, plainLen)
-	} else {
-		plain = plain[:plainLen]
+	if len(out) < plainLen {
+		return 0, false
 	}
-	payload := wire[SalamanderSaltSize:]
-	for i := range plain {
-		plain[i] = payload[i] ^ hash[i%len(hash)]
-	}
-	return plain, true
+	sum := c.sumSalt(c.readScratch, wire[:SalamanderSaltSize])
+	xorKeystream(out[:plainLen], wire[SalamanderSaltSize:], &sum)
+	return plainLen, true
 }
 
-func salamanderHash(password, salt []byte) [32]byte {
-	h := hashPool.Get().(hash.Hash)
-	h.Reset()
-	_, _ = h.Write(password)
-	_, _ = h.Write(salt)
-	var sum [32]byte
-	h.Sum(sum[:0])
-	hashPool.Put(h)
-	return sum
+func (c *PacketConn) unmask(wire []byte) (bufp *[]byte, plain []byte, ok bool) {
+	if len(wire) <= SalamanderSaltSize {
+		return nil, nil, false
+	}
+	plainLen := len(wire) - SalamanderSaltSize
+	bufp, plain = getWire(plainLen)
+	sum := c.sumSalt(c.readScratch, wire[:SalamanderSaltSize])
+	xorKeystream(plain, wire[SalamanderSaltSize:], &sum)
+	return bufp, plain, true
+}
+
+func xorKeystream(dst, src []byte, key *[32]byte) {
+	n := len(src)
+	if len(dst) < n {
+		n = len(dst)
+	}
+	i := 0
+	if n >= 32 {
+		words := n / 8
+		dstW := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(dst))), words)
+		srcW := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(src))), words)
+		k := (*[4]uint64)(unsafe.Pointer(key))
+		blocks := words / 4
+		for b := 0; b < blocks; b++ {
+			base := b * 4
+			dstW[base] = srcW[base] ^ k[0]
+			dstW[base+1] = srcW[base+1] ^ k[1]
+			dstW[base+2] = srcW[base+2] ^ k[2]
+			dstW[base+3] = srcW[base+3] ^ k[3]
+		}
+		i = blocks * 32
+	}
+	for j := 0; i < n; i, j = i+1, j+1 {
+		dst[i] = src[i] ^ key[j]
+	}
 }
 
 func (c *PacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
@@ -210,7 +310,7 @@ func (c *PacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
 	if maxCount < minCount {
 		return 0, fmt.Errorf("Gecko cannot fragment a %d-byte QUIC packet into at most eight datagrams", len(packet))
 	}
-	n, err := randomBetween(minCount, maxCount)
+	n, err := c.randomBetween(minCount, maxCount)
 	if err != nil {
 		return 0, err
 	}
@@ -231,7 +331,7 @@ func (c *PacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
 		if low > high {
 			low = high
 		}
-		cut, err := randomBetween(low, high)
+		cut, err := c.randomBetween(low, high)
 		if err != nil {
 			return 0, err
 		}
@@ -253,40 +353,53 @@ func (c *PacketConn) writeGecko(packet []byte, addr net.Addr) (int, error) {
 		if minWire > maxWire {
 			return 0, fmt.Errorf("Gecko fragment exceeds %d bytes", geckoMaxPacketSize)
 		}
-		targetSize, err := randomBetween(minWire, maxWire)
+		targetSize, err := c.randomBetween(minWire, maxWire)
 		if err != nil {
 			return 0, err
 		}
 		need := targetSize - SalamanderSaltSize - len(frame) - len(chunk)
 		binary.BigEndian.PutUint16(frame[3:5], uint16(need))
 		padding := make([]byte, need)
-		if _, err := io.ReadFull(rand.Reader, padding); err != nil {
+		if err := c.readSalt(padding); err != nil {
 			return 0, err
 		}
 		frame = append(frame, padding...)
 		frame = append(frame, chunk...)
-		wire, err := c.mask(frame)
+		wirep, wire, err := c.mask(frame)
 		if err != nil {
 			return 0, err
 		}
 		if _, err = c.pc.WriteTo(wire, addr); err != nil {
-			releaseWire(wire)
+			putWire(wirep)
 			return 0, err
 		}
-		releaseWire(wire)
+		putWire(wirep)
 	}
 	return len(packet), nil
 }
 
-func randomBetween(min, max int) (int, error) {
+func (c *PacketConn) randomBetween(min, max int) (int, error) {
 	if min > max {
 		return 0, fmt.Errorf("invalid random range %d..%d", min, max)
 	}
-	value, err := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
-	if err != nil {
-		return 0, err
+	span := uint64(max - min + 1)
+	if span == 0 {
+		return min, nil
 	}
-	return min + int(value.Int64()), nil
+	// Unbiased draw from the same CSPRNG buffer as the salt. Rejection keeps
+	// the distribution uniform, so padding lengths stay indistinguishable.
+	const space = uint64(1) << 32
+	limit := space / span * span
+	var b [4]byte
+	for {
+		if err := c.readSalt(b[:]); err != nil {
+			return 0, err
+		}
+		v := uint64(binary.LittleEndian.Uint32(b[:]))
+		if v < limit {
+			return min + int(v%span), nil
+		}
+	}
 }
 
 func (c *PacketConn) ungecko(packet []byte, addr net.Addr) ([]byte, bool) {
@@ -303,7 +416,7 @@ func (c *PacketConn) ungecko(packet []byte, addr net.Addr) ([]byte, bool) {
 		return nil, false
 	}
 	chunk := append([]byte(nil), packet[5+pad:]...)
-	key := addr.String() + "/" + string([]byte{id})
+	key := geckoKey{addr: addr.String(), id: id}
 	for k, old := range c.pending {
 		if time.Since(old.created) > 3*time.Second {
 			delete(c.pending, k)

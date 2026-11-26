@@ -16,3 +16,16 @@ func TestCleanupDoesNotChangeHostNetworking(t *testing.T) {
 		t.Fatal("cleanup lost route scope")
 	}
 }
+
+func TestDisablePingCommandIsIdempotent(t *testing.T) {
+	command := DisablePingCommand()
+	if !strings.Contains(command, disablePingMarker) {
+		t.Fatal("missing hoplink marker")
+	}
+	if !strings.Contains(command, disablePingDropIn) {
+		t.Fatal("missing sysctl drop-in path")
+	}
+	if !strings.Contains(command, "grep -qs") || !strings.Contains(command, "icmp_echo_ignore_all") {
+		t.Fatal("missing idempotent checks")
+	}
+}

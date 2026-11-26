@@ -179,6 +179,27 @@ func BenchmarkHostFromReqAddr(b *testing.B) {
 	}
 }
 
+func BenchmarkParseCurrentGoroutineID(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if parseCurrentGoroutineID() == 0 {
+			b.Fatal("gid")
+		}
+	}
+}
+
+func BenchmarkPendingStoreTake(b *testing.B) {
+	p := newPendingRoutes()
+	b.ReportAllocs()
+	for b.Loop() {
+		id := parseCurrentGoroutineID()
+		p.store(id, true)
+		if _, ok := p.take(id); !ok {
+			b.Fatal("missing route")
+		}
+	}
+}
+
 func BenchmarkEntryPath_TCP(b *testing.B) {
 	m := benchMatcher(b)
 	record := minimalTLSClientHello("video.google.com")

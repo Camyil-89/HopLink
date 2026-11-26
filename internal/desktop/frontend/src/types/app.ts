@@ -62,6 +62,7 @@ export type Route = {
   chainMode?: string;
   cascadeDomainPatterns?: string;
   cascadeSNIPatterns?: string;
+  disableServerPing?: boolean;
 };
 
 export type AppState = {
@@ -87,6 +88,7 @@ export type AppState = {
   chainMode?: string;
   cascadeDomainPatterns?: string;
   cascadeSNIPatterns?: string;
+  disableServerPing?: boolean;
   knownHosts: Record<string, string>;
 };
 
@@ -117,5 +119,6 @@ export const emptyState: AppState = {
   chainMode: "udp-relay",
   cascadeDomainPatterns: "",
   cascadeSNIPatterns: "",
+  disableServerPing: false,
   knownHosts: {},
 };

@@ -64,6 +64,7 @@ type AppConfig struct {
 	ChainMode             string            `json:"chainMode,omitempty"`
 	CascadeDomainPatterns string            `json:"cascadeDomainPatterns,omitempty"`
 	CascadeSNIPatterns    string            `json:"cascadeSNIPatterns,omitempty"`
+	DisableServerPing     bool              `json:"disableServerPing,omitempty"`
 	RelayTransportClientKey string    `json:"relayTransportClientKey,omitempty"`
 	RelayTransportClientPub string    `json:"relayTransportClientPub,omitempty"`
 	RelayTransportHostKey   string    `json:"relayTransportHostKey,omitempty"`
@@ -93,6 +94,7 @@ type Route struct {
 	ChainMode               string `json:"chainMode,omitempty"`
 	CascadeDomainPatterns   string `json:"cascadeDomainPatterns,omitempty"`
 	CascadeSNIPatterns      string `json:"cascadeSNIPatterns,omitempty"`
+	DisableServerPing       bool   `json:"disableServerPing,omitempty"`
 	RelayTransportClientKey string `json:"relayTransportClientKey,omitempty"`
 	RelayTransportClientPub string `json:"relayTransportClientPub,omitempty"`
 	RelayTransportHostKey   string `json:"relayTransportHostKey,omitempty"`

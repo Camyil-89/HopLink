@@ -1,23 +1,32 @@
 package cascade
 
-import "sync"
+import (
+	"sync"
+	"unsafe"
+)
 
 // pendingRoutes holds sniff results between RequestHook and Outbound on the entry hop.
 // Entries exist only while a stream is connecting; size tracks concurrent dials, not
 // client count. Sharding avoids a single map lock under many parallel clients.
+// Each shard occupies its own cache line so adjacent locks do not false-share.
 type pendingRoutes struct {
 	shards [routeShardCount]routeShard
 
 	zeroMu      sync.Mutex
 	zeroPending bool
 	zeroSet     bool
+	_           [cacheLineSize - 16]byte
 }
 
-const routeShardCount = 64
+const (
+	routeShardCount = 64
+	cacheLineSize   = 64
+)
 
 type routeShard struct {
 	mu    sync.Mutex
 	route map[uint64]bool
+	_     [cacheLineSize - unsafe.Sizeof(sync.Mutex{}) - unsafe.Sizeof(map[uint64]bool(nil))]byte
 }
 
 func newPendingRoutes() pendingRoutes {

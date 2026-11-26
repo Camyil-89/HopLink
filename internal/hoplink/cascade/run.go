@@ -62,6 +62,7 @@ func Run(listen, role, password, sni, certPath, keyPath, certDir, usersFile, nex
 	if err != nil {
 		return fmt.Errorf("listen Hysteria2 UDP %s: %w", listen, err)
 	}
+	hysteria.GrowUDPBuffers(pc)
 	if obfsMode != "" {
 		pc, err = obfs.NewPacketConn(pc, obfsMode, obfsPassword)
 		if err != nil {

@@ -244,6 +244,7 @@ func Run(listen, password, sni, certPath, keyPath, certDir, publicHost, usersFil
 	if err != nil {
 		return fmt.Errorf("listen Hysteria2 UDP %s: %w", listen, err)
 	}
+	GrowUDPBuffers(pc)
 	if obfsMode != "" {
 		pc, err = obfs.NewPacketConn(pc, obfsMode, obfsPassword)
 		if err != nil {
@@ -303,8 +304,12 @@ func ExitServerConfig(pc net.PacketConn, certs []tls.Certificate, password strin
 		Authenticator:         PasswordAuth{ChainPassword: password, Users: hyUsers},
 		EventLogger:           events{},
 		IgnoreClientBandwidth: true,
-		CongestionConfig:      hyserver.CongestionConfig{Type: "bbr", BBRProfile: "conservative"},
+		CongestionConfig: hyserver.CongestionConfig{Type: "bbr", BBRProfile: "standard"},
 		QUICConfig: hyserver.QUICConfig{
+			InitialStreamReceiveWindow:     16 << 20,
+			MaxStreamReceiveWindow:         16 << 20,
+			InitialConnectionReceiveWindow: 32 << 20,
+			MaxConnectionReceiveWindow:     32 << 20,
 			// Default hysteria cap (1024) is tight for launchers that open many parallel TCP streams.
 			MaxIncomingStreams: 1 << 16,
 		},

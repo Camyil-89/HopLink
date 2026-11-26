@@ -9,14 +9,15 @@ import (
 )
 
 // Matcher holds routing rules compiled into fast string checks and fallback regexps.
+// Hot slices sit in the first cache lines; regexps are the cold miss path.
 type Matcher struct {
 	ruleCount      int
-	regexps        []*regexp.Regexp
-	domainSuffixes []string
-	labelRoots     []string
 	tldDotSuffixes []string
+	domainSuffixes []string
 	keywords       []string
 	fullHosts      []string
+	labelRoots     []string
+	regexps        []*regexp.Regexp
 }
 
 // RuleCount reports how many rules were loaded (all rule kinds).

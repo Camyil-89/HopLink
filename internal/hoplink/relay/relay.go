@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"hoplink/internal/hoplink/hysteria"
 	"hoplink/internal/hoplink/log"
 	"hoplink/internal/hoplink/obfs"
 )
@@ -23,29 +24,32 @@ const (
 	maxQueuedBytes     = 16 << 20
 )
 
+type pooledPacket struct {
+	b []byte
+}
+
 var packetPool = sync.Pool{
 	New: func() any {
-		return make([]byte, 0, 1500)
+		return &pooledPacket{b: make([]byte, 0, 1500)}
 	},
 }
 
-func clonePacket(src []byte) []byte {
-	buf := packetPool.Get().([]byte)
-	if cap(buf) < len(src) {
-		packetPool.Put(buf[:0])
-		buf = make([]byte, len(src))
+func clonePacket(src []byte) *pooledPacket {
+	p := packetPool.Get().(*pooledPacket)
+	if cap(p.b) < len(src) {
+		p.b = make([]byte, len(src))
 	} else {
-		buf = buf[:len(src)]
+		p.b = p.b[:len(src)]
 	}
-	copy(buf, src)
-	return buf
+	copy(p.b, src)
+	return p
 }
 
-func releasePacket(packet []byte) {
+func releasePacket(packet *pooledPacket) {
 	if packet == nil {
 		return
 	}
-	packetPool.Put(packet[:0])
+	packetPool.Put(packet)
 }
 
 // Upstream carries relay traffic over SSH instead of raw UDP to the next hop.
@@ -72,16 +76,16 @@ type Relay struct {
 }
 
 type session struct {
+	lastSeen   atomic.Int64
 	relay      *Relay
 	peer       netip.AddrPort
 	conn       *net.UDPConn
 	sshDeliver chan []byte
-	queue      chan []byte
+	queue      chan *pooledPacket
 	done       chan struct{}
 	once       sync.Once
 	mu         sync.Mutex
 	closed     bool
-	lastSeen   atomic.Int64
 }
 
 func New(listen, forward string, idleTimeout time.Duration) (*Relay, error) {
@@ -118,6 +122,7 @@ func NewWithTransport(listen, forward string, idleTimeout time.Duration, obfsMod
 	if err != nil {
 		return nil, err
 	}
+	hysteria.GrowUDPBuffers(conn)
 	return &Relay{conn: conn, target: target, idleTimeout: idleTimeout, obfsMode: obfsMode, sessions: make(map[netip.AddrPort]*session)}, nil
 }
 
@@ -174,8 +179,8 @@ func (r *Relay) Serve(ctx context.Context) error {
 	}
 }
 
-func (s *session) offer(packet []byte) {
-	n := int64(len(packet))
+func (s *session) offer(packet *pooledPacket) {
+	n := int64(len(packet.b))
 	for {
 		used := s.relay.queuedBytes.Load()
 		if used+n > maxQueuedBytes {
@@ -245,7 +250,10 @@ func (r *Relay) session(peer netip.AddrPort, packet []byte) *session {
 		}
 		log.Infof("[UDP_RELAY_SESSION_START] peer=%s target=%s obfs=%s", peer, r.target, r.obfsMode)
 	}
-	s := &session{relay: r, peer: peer, conn: conn, sshDeliver: sshDeliver, queue: make(chan []byte, queueSize), done: make(chan struct{})}
+	if conn != nil {
+		hysteria.GrowUDPBuffers(conn)
+	}
+	s := &session{relay: r, peer: peer, conn: conn, sshDeliver: sshDeliver, queue: make(chan *pooledPacket, queueSize), done: make(chan struct{})}
 	s.lastSeen.Store(time.Now().UnixNano())
 	r.sessions[peer] = s
 	r.wg.Add(2)
@@ -263,7 +271,7 @@ func (s *session) close() {
 		for {
 			select {
 			case packet := <-s.queue:
-				s.relay.queuedBytes.Add(-int64(len(packet)))
+				s.relay.queuedBytes.Add(-int64(len(packet.b)))
 				releasePacket(packet)
 			default:
 				break cleanup
@@ -294,11 +302,11 @@ func (s *session) send() {
 		case packet := <-s.queue:
 			var err error
 			if s.relay.upstream != nil {
-				err = s.relay.upstream.Write(s.peer, packet)
+				err = s.relay.upstream.Write(s.peer, packet.b)
 			} else {
-				_, err = s.conn.Write(packet)
+				_, err = s.conn.Write(packet.b)
 			}
-			s.relay.queuedBytes.Add(-int64(len(packet)))
+			s.relay.queuedBytes.Add(-int64(len(packet.b)))
 			releasePacket(packet)
 			if err != nil {
 				log.Warnf("[UDP_RELAY_SEND_ERROR] peer=%s target=%s err=%v", s.peer, s.relay.target, err)

@@ -1,38 +1,56 @@
 package cascade
 
 import (
-	"bytes"
 	"runtime"
-	"strconv"
+	"sync"
 )
+
+const goroutinePrefix = "goroutine "
+
+var gidBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 64)
+		return &b
+	},
+}
 
 // parseCurrentGoroutineID reads the monotonic goroutine id from the runtime stack line.
 // IDs are not reused in practice; the same id is used for paired hook→dial on one stream.
 func parseCurrentGoroutineID() uint64 {
-	const prefix = "goroutine "
-	for size := 64; size <= 2048; size *= 2 {
-		buf := make([]byte, size)
+	bp := gidBufPool.Get().(*[]byte)
+	buf := *bp
+	for {
 		n := runtime.Stack(buf, false)
-		if n == size {
-			continue
+		if n < len(buf) {
+			id := gidFromStack(buf[:n])
+			*bp = buf
+			gidBufPool.Put(bp)
+			return id
 		}
-		line := buf[:n]
-		if !bytes.HasPrefix(line, []byte(prefix)) {
-			return 0
-		}
-		line = line[len(prefix):]
-		end := 0
-		for end < len(line) && line[end] >= '0' && line[end] <= '9' {
-			end++
-		}
-		if end == 0 {
-			return 0
-		}
-		id, err := strconv.ParseUint(string(line[:end]), 10, 64)
-		if err != nil {
-			return 0
-		}
-		return id
+		buf = make([]byte, len(buf)*2)
 	}
-	return 0
+}
+
+func gidFromStack(line []byte) uint64 {
+	if len(line) <= len(goroutinePrefix) {
+		return 0
+	}
+	for i := 0; i < len(goroutinePrefix); i++ {
+		if line[i] != goroutinePrefix[i] {
+			return 0
+		}
+	}
+	var id uint64
+	i := len(goroutinePrefix)
+	if line[i] < '0' || line[i] > '9' {
+		return 0
+	}
+	for ; i < len(line); i++ {
+		c := line[i]
+		if c < '0' || c > '9' {
+			return id
+		}
+		id = id*10 + uint64(c-'0')
+	}
+	return id
 }

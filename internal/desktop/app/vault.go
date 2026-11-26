@@ -285,6 +285,7 @@ func (a *App) storeActiveRouteLocked() {
 		route.ChainMode = a.config.ChainMode
 		route.CascadeDomainPatterns = a.config.CascadeDomainPatterns
 		route.CascadeSNIPatterns = a.config.CascadeSNIPatterns
+		route.DisableServerPing = a.config.DisableServerPing
 		route.RelayTransportClientKey = a.config.RelayTransportClientKey
 		route.RelayTransportClientPub = a.config.RelayTransportClientPub
 		route.RelayTransportHostKey = a.config.RelayTransportHostKey
@@ -311,6 +312,7 @@ func (a *App) loadActiveRouteLocked() {
 		a.config.ChainMode = route.ChainMode
 		a.config.CascadeDomainPatterns = route.CascadeDomainPatterns
 		a.config.CascadeSNIPatterns = route.CascadeSNIPatterns
+		a.config.DisableServerPing = route.DisableServerPing
 		a.config.RelayTransportClientKey = route.RelayTransportClientKey
 		a.config.RelayTransportClientPub = route.RelayTransportClientPub
 		a.config.RelayTransportHostKey = route.RelayTransportHostKey

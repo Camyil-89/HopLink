@@ -3,6 +3,8 @@ package desktop
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"hoplink/internal/desktop/app/remote"
 )
 
@@ -46,6 +48,49 @@ func removeServerDeployment(route *Route, server Server) {
 		route.LegacyLayout = false
 		route.LegacyIDLayout = false
 	}
+}
+
+// ForgetRouteDeployment drops a server from the active route's deployment list
+// without SSH. Use when the node was removed from the map and remote cleanup is
+// impossible.
+func (a *App) ForgetRouteDeployment(serverID string) (AppConfig, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.vaultLocked || len(a.vaultKey) == 0 {
+		return a.config, fmt.Errorf("разблокируйте настройки")
+	}
+	serverID = strings.TrimSpace(serverID)
+	if serverID == "" {
+		return a.config, fmt.Errorf("укажите сервер")
+	}
+	a.storeActiveRouteLocked()
+	var server Server
+	found := false
+	for _, deployed := range a.config.DeployedServers {
+		if deployed.ID == serverID {
+			server, found = deployed, true
+			break
+		}
+	}
+	if !found {
+		return a.config, fmt.Errorf("сервер не числится установленным на этом маршруте")
+	}
+	for _, mapped := range a.config.MapServers {
+		if mapped.ID == serverID {
+			return a.config, fmt.Errorf("сервер всё ещё на карте маршрута")
+		}
+	}
+	for i := range a.config.Routes {
+		if a.config.Routes[i].ID == a.config.ActiveRouteID {
+			removeServerDeployment(&a.config.Routes[i], server)
+			break
+		}
+	}
+	a.loadActiveRouteLocked()
+	if err := a.saveLocked(); err != nil {
+		return a.config, err
+	}
+	return a.config, nil
 }
 
 // RemoveHoplink cleans every configured route on each selected server. Route
