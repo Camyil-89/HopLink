@@ -40,7 +40,9 @@ export function useHoplinkApp() {
     [edges, setEdges] = useState<FlowEdge[]>([]),
     [fitRevision, setFitRevision] = useState(0),
     [page, setPage] = useState("routes"),
-    [routeTab, setRouteTab] = useState<"map" | "settings" | "users">("map"),
+    [routeTab, setRouteTab] = useState<
+      "map" | "settings" | "users" | "userStats" | "stats"
+    >("map"),
     [collapsed, setCollapsed] = useState(false),
     [serverForm, setServerForm] = useState(false),
     [userForm, setUserForm] = useState(false),

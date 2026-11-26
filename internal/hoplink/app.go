@@ -16,6 +16,7 @@ import (
 	"hoplink/internal/hoplink/hysteria"
 	hlog "hoplink/internal/hoplink/log"
 	"hoplink/internal/hoplink/relay"
+	"hoplink/internal/hoplink/stats"
 	"hoplink/internal/hoplink/ssh"
 	"hoplink/internal/hoplink/ws"
 )
@@ -58,6 +59,7 @@ func Run() {
 	hy2Obfs := flag.String("hy2-obfs", "", "маскировка Hysteria2: salamander или gecko")
 	hy2ObfsKeyFile := flag.String("hy2-obfs-key-file", "", "файл пароля UDP-маскировки")
 	logLevel := flag.String("log-level", "info", "уровень журнала: trace, debug, info, warn, error")
+	statsFile := flag.String("stats-file", "", "файл JSON со статистикой трафика")
 	flag.Parse()
 	if *capabilities {
 		fmt.Println("udp-relay-v1")
@@ -68,6 +70,13 @@ func Run() {
 	}
 	if err := hlog.SetLevel(*logLevel); err != nil {
 		log.Fatal(err)
+	}
+	if path := strings.TrimSpace(*statsFile); path != "" {
+		collector, err := stats.Start(path)
+		if err != nil {
+			log.Fatalf("статистика: %v", err)
+		}
+		defer collector.Close()
 	}
 	if *keyFile != "" {
 		data, err := os.ReadFile(*keyFile)

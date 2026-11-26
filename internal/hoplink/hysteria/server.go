@@ -27,6 +27,7 @@ import (
 
 	"hoplink/internal/hoplink/log"
 	"hoplink/internal/hoplink/obfs"
+	"hoplink/internal/hoplink/stats"
 
 	hyserver "github.com/apernet/hysteria/core/v2/server"
 )
@@ -298,11 +299,16 @@ func Run(listen, password, sni, certPath, keyPath, certDir, publicHost, usersFil
 func ExitServerConfig(pc net.PacketConn, certs []tls.Certificate, password string, users []User) *hyserver.Config {
 	hyUsers := make([]User, len(users))
 	copy(hyUsers, users)
+	var traffic hyserver.TrafficLogger
+	if stats.Default != nil {
+		traffic = stats.Default
+	}
 	return &hyserver.Config{
 		TLSConfig:             hyserver.TLSConfig{Certificates: certs},
 		Conn:                  pc,
 		Authenticator:         PasswordAuth{ChainPassword: password, Users: hyUsers},
 		EventLogger:           events{},
+		TrafficLogger:         traffic,
 		IgnoreClientBandwidth: true,
 		CongestionConfig: hyserver.CongestionConfig{Type: "bbr", BBRProfile: "standard"},
 		QUICConfig: hyserver.QUICConfig{

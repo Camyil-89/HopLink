@@ -46,6 +46,10 @@ export function GetRouteJournal(arg1, arg2, arg3, arg4) {
   return window['go']['desktop']['App']['GetRouteJournal'](arg1, arg2, arg3, arg4);
 }
 
+export function GetRouteTrafficStats(arg1) {
+  return window['go']['desktop']['App']['GetRouteTrafficStats'](arg1);
+}
+
 export function GetState() {
   return window['go']['desktop']['App']['GetState']();
 }

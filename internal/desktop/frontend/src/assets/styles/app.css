@@ -1722,3 +1722,241 @@ td b {
   color: #9299a8;
   font-size: 10px;
 }
+.route-stats .page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.route-stats .page-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.route-stats .stats-period-select {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 9px;
+  color: #8b92a0;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.route-stats .stats-period-select select {
+  height: 34px;
+  min-width: 130px;
+  border: 1px solid #e4e7ef;
+  border-radius: 7px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: #3c4353;
+  background: #fff;
+}
+.route-stats .stats-route-card {
+  margin-bottom: 18px;
+}
+.route-stats .stats-hops-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.route-stats .stats-hops-grid .stats-hop-card {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.route-stats .stats-hop-card {
+  margin-bottom: 18px;
+}
+.route-stats .stats-summary-compact {
+  padding: 12px 18px 8px;
+}
+.route-stats .stats-summary-compact .stats-tile {
+  min-width: 0;
+  flex: 1 1 120px;
+  padding: 10px 12px;
+}
+.route-stats .stats-summary-compact .stats-tile b {
+  font-size: 17px;
+}
+.route-stats .stats-hop-body {
+  padding: 4px 0 8px;
+}
+.route-stats .stats-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 18px 12px;
+}
+.route-stats .stats-tile {
+  flex: 1;
+  min-width: 180px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: #f7f8fb;
+  border: 1px solid #e8ebf2;
+}
+.route-stats .stats-tile small {
+  display: block;
+  color: #6b7385;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.route-stats .stats-tile b {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+  color: #2e3340;
+}
+.route-stats .stats-tile-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 9px;
+  color: #9ba1ae;
+}
+.route-stats .stats-chart-wrap {
+  padding: 8px 18px 16px;
+  border-top: 1px solid #eff0f4;
+  border-bottom: 1px solid #eff0f4;
+  margin: 0 0 4px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #fff 100%);
+}
+.route-stats .stats-chart-wrap-compact {
+  padding: 6px 18px 10px;
+  border-bottom: none;
+  margin: 0;
+}
+.route-stats .stats-chart {
+  width: 100%;
+}
+.route-stats .stats-chart-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #6b7385;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.route-stats .stats-chart-svg {
+  width: 100%;
+  max-height: 120px;
+  height: auto;
+  display: block;
+}
+.route-stats .stats-chart-grid {
+  stroke: #eef0f5;
+  stroke-width: 1;
+}
+.route-stats .stats-chart-axis,
+.route-stats .stats-chart-label {
+  fill: #a0a5b0;
+  font-size: 9px;
+}
+.route-stats .stats-chart-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: 9px;
+  color: #737b8b;
+}
+.route-stats .stats-chart-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.route-stats .stats-legend-in {
+  background: linear-gradient(180deg, #6b7df0, #8b97f4);
+}
+.route-stats .stats-legend-rss {
+  background: linear-gradient(180deg, #c07ae8, #d8a0f0);
+}
+.route-stats .stats-legend-cpu {
+  background: linear-gradient(180deg, #e0a060, #eeb080);
+}
+.route-user-stats .stats-user-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 18px 16px;
+  padding: 20px 12px;
+  color: #9ba1ae;
+  font-size: 11px;
+}
+.route-user-stats .stats-user-inactive {
+  font-weight: 600;
+  color: #b8bec9;
+  text-transform: lowercase;
+}
+.route-user-stats .stats-users-grid .stats-user-card {
+  min-width: 0;
+}
+.route-stats .stats-process-block {
+  margin-top: 4px;
+  border-top: 1px solid #eff0f4;
+  padding-top: 2px;
+  width: 100%;
+  min-width: 0;
+}
+.route-stats .stats-process-head {
+  padding: 14px 18px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #5c6375;
+  letter-spacing: 0.02em;
+}
+.route-stats .stats-hops-grid .stats-process-head {
+  padding: 12px 14px 6px;
+}
+.route-stats .stats-process-block .stats-summary-compact {
+  padding-top: 0;
+}
+.route-stats .stats-chart-wrap-process {
+  border-top: 1px solid #f0f1f5;
+  margin-top: 0;
+}
+.route-stats .stats-chart-wrap-process + .stats-chart-wrap-process {
+  padding-top: 4px;
+}
+.route-stats .stats-legend-out {
+  background: linear-gradient(180deg, #52bd8c, #6dd4a8);
+}
+.route-stats .stats-chart-empty {
+  padding: 24px;
+  text-align: center;
+  color: #9ba1ae;
+  font-size: 11px;
+}
+.route-stats .stats-table-wrap {
+  padding: 12px 18px 18px;
+  overflow-x: auto;
+}
+.route-stats .stats-hops-grid .stats-table-wrap {
+  padding: 10px 14px 14px;
+}
+.route-stats .stats-table-wrap + .stats-table-wrap {
+  padding-top: 4px;
+  border-top: 1px solid #f0f1f5;
+}
+.route-stats .stats-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #5c6375;
+  margin-bottom: 10px;
+}
+.route-stats .notice-banner {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fff4f2;
+  border: 1px solid #ffd5cc;
+  color: #9a3b2e;
+  font-size: 12px;
+}

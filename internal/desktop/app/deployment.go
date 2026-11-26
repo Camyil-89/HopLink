@@ -14,9 +14,14 @@ import (
 
 // Every hop except the last is an opaque UDP relay. Route credentials and the
 // existing pinned certificate belong only on the exit, preserving client URLs.
+// stats.json lives beside HopLink in systemd WorkingDirectory.
+func appendStatsFile(args []string) []string {
+	return append(args, "-stats-file", "stats.json")
+}
+
 func routeNodeArgs(cfg AppConfig, order []Server, index int, installDir string) []string {
 	if isCascadeMode(cfg) {
-		return cascadeNodeArgs(cfg, order, index, installDir)
+		return appendStatsFile(cascadeNodeArgs(cfg, order, index, installDir))
 	}
 	level := cfg.LogLevel
 	if level == "" {
@@ -63,7 +68,7 @@ func routeNodeArgs(cfg AppConfig, order []Server, index int, installDir string) 
 		if cfg.ObfsType != "" {
 			args = append(args, "-relay-obfs", cfg.ObfsType)
 		}
-		return args
+		return appendStatsFile(args)
 	}
 	args = append(args, "-mode", "hy2-forward", "-key-file", installDir+"/shared.key", "-hy2-users-file", installDir+"/users.txt", "-hy2-sni", cfg.SNI, "-hy2-cert", installDir+"/hy2-server.crt", "-hy2-cert-key", installDir+"/hy2-server.key")
 	if index > 0 && transport == "ssh" {
@@ -83,7 +88,7 @@ func routeNodeArgs(cfg AppConfig, order []Server, index int, installDir string) 
 	if cfg.ObfsType != "" {
 		args = append(args, "-hy2-obfs", cfg.ObfsType, "-hy2-obfs-key-file", installDir+"/obfs.key")
 	}
-	return args
+	return appendStatsFile(args)
 }
 
 func cascadeNodeArgs(cfg AppConfig, order []Server, index int, installDir string) []string {
