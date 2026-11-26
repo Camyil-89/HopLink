@@ -1,6 +1,9 @@
 package desktop
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestAllRouteRemovalTargetsIncludesEveryRoute(t *testing.T) {
 	routes := []Route{
@@ -37,5 +40,48 @@ func TestRemoveServerDeploymentKeepsMapAndClearsEntryLinks(t *testing.T) {
 	}
 	if len(route.MapServers) != 2 || len(route.Edges) != 1 {
 		t.Fatal("saved route map should remain unchanged")
+	}
+}
+
+func TestForgetRouteDeploymentRequiresOffMap(t *testing.T) {
+	app := &App{
+		vaultKey:   make([]byte, 32),
+		vaultSalt:  []byte("0123456789abcdef"),
+		configPath: filepath.Join(t.TempDir(), "settings.json"),
+		config: AppConfig{
+		ActiveRouteID: "r1",
+		Routes: []Route{{
+			ID: "r1",
+			MapServers: []Server{
+				{ID: "s1", Host: "gone.example", SSHPort: 22},
+				{ID: "s2", Host: "stay.example", SSHPort: 22},
+			},
+			DeployedServers: []Server{
+				{ID: "s1", Host: "gone.example", SSHPort: 22},
+				{ID: "s2", Host: "stay.example", SSHPort: 22},
+			},
+		}},
+		MapServers: []Server{
+			{ID: "s1", Host: "gone.example", SSHPort: 22},
+			{ID: "s2", Host: "stay.example", SSHPort: 22},
+		},
+		DeployedServers: []Server{
+			{ID: "s1", Host: "gone.example", SSHPort: 22},
+			{ID: "s2", Host: "stay.example", SSHPort: 22},
+		},
+		},
+	}
+	app.config.MapServers = []Server{{ID: "s2", Host: "stay.example", SSHPort: 22}}
+	app.config.Routes[0].MapServers = []Server{{ID: "s2", Host: "stay.example", SSHPort: 22}}
+	_, err := app.ForgetRouteDeployment("s1")
+	if err != nil {
+		t.Fatalf("forget off-map: %v", err)
+	}
+	if len(app.config.DeployedServers) != 1 || app.config.DeployedServers[0].ID != "s2" {
+		t.Fatalf("deployed: %#v", app.config.DeployedServers)
+	}
+	_, err = app.ForgetRouteDeployment("s2")
+	if err == nil {
+		t.Fatal("expected error while server still on map")
 	}
 }

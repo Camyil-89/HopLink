@@ -27,6 +27,8 @@ import {
   type RouteServiceStatus,
 } from "../types/app";
 import { initialNodes, routeSnapshot } from "../utils/flow";
+import { pendingRouteCleanup } from "../utils/routeCleanup";
+import type { OrphanCleanupChoice } from "../modals/ApplyOrphanCleanupModal";
 import { api, logLine, uid } from "./api";
 import { emptyServerDraft } from "./defaults";
 import { isSynchronizationCancelled, parseHostApproval } from "./hostApproval";
@@ -91,6 +93,12 @@ export function useHoplinkApp() {
   );
   const [renameRouteName, setRenameRouteName] = useState("");
   const [clearMapConfirm, setClearMapConfirm] = useState(false);
+  const [applyOrphanServers, setApplyOrphanServers] = useState<Server[] | null>(
+    null,
+  );
+  const [applyOrphanChoices, setApplyOrphanChoices] = useState<
+    Record<string, OrphanCleanupChoice>
+  >({});
   const [operationResult, setOperationResult] = useState<
     "success" | "error" | "cancelled" | null
   >(null);
@@ -124,6 +132,10 @@ export function useHoplinkApp() {
     setState((st) => ({ ...st, ...saved }));
     return saved as State;
   };
+  const mapServersLive = useMemo(
+    () => nodes.map((n) => (n.data as { server: Server }).server),
+    [nodes],
+  );
   const flowNodes = useMemo(
     () =>
       nodes.map((n) => {
@@ -198,6 +210,7 @@ export function useHoplinkApp() {
         chainMode: s.chainMode,
         cascadeDomainPatterns: s.cascadeDomainPatterns,
         cascadeSNIPatterns: s.cascadeSNIPatterns,
+        disableServerPing: s.disableServerPing,
       },
     );
   };
@@ -499,6 +512,7 @@ export function useHoplinkApp() {
       state.chainMode || "udp-relay",
       state.cascadeDomainPatterns || "",
       state.cascadeSNIPatterns || "",
+      !!state.disableServerPing,
     )) as State;
     setState({ ...state, ...saved });
     setRouteStatuses((current) => {
@@ -560,7 +574,7 @@ export function useHoplinkApp() {
       if (target === "remove") setRouteChosen(true);
       setPage(target);
     });
-  const apply = async () => {
+  const runApply = async () => {
     setResumeApply(false);
     setProgressTitle("Ход синхронизации");
     setProgressCancelable(true);
@@ -603,6 +617,54 @@ export function useHoplinkApp() {
       else setNotice(cancelled ? "Синхронизация отменена" : msg);
     } finally {
       setBusy(false);
+    }
+  };
+  const apply = async () => {
+    const orphans = pendingRouteCleanup(
+      mapServersLive,
+      state.deployedServers,
+    );
+    if (orphans.length > 0) {
+      setApplyOrphanServers(orphans);
+      setApplyOrphanChoices(
+        Object.fromEntries(orphans.map((s) => [s.id, "remove" as const])),
+      );
+      return;
+    }
+    await runApply();
+  };
+  const cancelApplyOrphanPrompt = () => {
+    setApplyOrphanServers(null);
+    setApplyOrphanChoices({});
+  };
+  const setApplyOrphanChoice = (
+    serverId: string,
+    choice: OrphanCleanupChoice,
+  ) => {
+    setApplyOrphanChoices((current) => ({ ...current, [serverId]: choice }));
+  };
+  const confirmApplyOrphanPrompt = async () => {
+    const servers = applyOrphanServers;
+    if (!servers?.length) return;
+    try {
+      let saved: State | null = null;
+      for (const server of servers) {
+        if (applyOrphanChoices[server.id] !== "exclude") continue;
+        saved = (await api().ForgetRouteDeployment(server.id)) as State;
+      }
+      if (saved) {
+        setState((current) => ({ ...current, ...saved }));
+        setRouteStatuses((current) => {
+          const next = { ...current };
+          delete next[state.activeRouteId];
+          return next;
+        });
+      }
+      setApplyOrphanServers(null);
+      setApplyOrphanChoices({});
+      await runApply();
+    } catch (e: any) {
+      await handleAppError(e);
     }
   };
   const requestApplyCancel = async () => {
@@ -1022,6 +1084,7 @@ export function useHoplinkApp() {
     operationResult,
     logEndRef,
     routeDirty,
+    mapServersLive,
     flowNodes,
     flowEdges,
     cardServers,
@@ -1040,6 +1103,11 @@ export function useHoplinkApp() {
     toggleUser,
     deleteUser,
     saveRoute,
+    applyOrphanServers,
+    applyOrphanChoices,
+    cancelApplyOrphanPrompt,
+    setApplyOrphanChoice,
+    confirmApplyOrphanPrompt,
     withUnsavedGuard,
     discardAndContinue,
     saveAndContinue,

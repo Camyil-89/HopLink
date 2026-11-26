@@ -73,6 +73,10 @@ func (a *App) apply(ctx context.Context) error {
 		chainHosts[i] = server.Host
 	}
 	a.log("Порядок цепочки: " + strings.Join(chainHosts, " → "))
+	activeOnMap := make(map[string]bool, len(order))
+	for _, s := range order {
+		activeOnMap[s.ID] = true
+	}
 	for _, other := range cfg.Routes {
 		if other.ID == cfg.ActiveRouteID || other.Port != cfg.Port || len(other.DeployedServers) == 0 {
 			continue
@@ -182,6 +186,18 @@ func (a *App) apply(ctx context.Context) error {
 		}
 		a.log(fmt.Sprintf("Сервер готов: %s; пользователь %s, Linux/%s, systemctl и base64 доступны.", s.Host, remoteUser, archs[i]))
 	}
+	if cfg.DisableServerPing {
+		a.log("Отключаю ответ на ICMP ping на узлах маршрута (пропускаю, если уже отключено)…")
+		for i, s := range order {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if _, e := runServerContext(ctx, clients[i], s, remote.DisablePingCommand(), nil); e != nil {
+				return fmt.Errorf("%s: отключение ICMP ping: %w", s.Host, e)
+			}
+			a.log(fmt.Sprintf("ICMP ping на %s: готово", s.Host))
+		}
+	}
 	bins := map[string]string{}
 	for _, arch := range archs {
 		if bins[arch] == "" {
@@ -246,6 +262,9 @@ func (a *App) apply(ctx context.Context) error {
 	for _, old := range cfg.DeployedServers {
 		if len(oldLayouts) == 0 {
 			break
+		}
+		if !activeOnMap[old.ID] {
+			continue
 		}
 		a.log("Переношу старый сервис маршрута на порядковый номер: " + old.Host)
 		if cleanupErr := a.removePreviousLayoutsContext(ctx, old, cfg.Port, oldLayouts); cleanupErr != nil {

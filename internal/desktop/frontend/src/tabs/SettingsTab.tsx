@@ -1,4 +1,4 @@
-import { KeyRound, Radio, ShieldCheck, X } from "lucide-react";
+import { KeyRound, ListFilter, Radio, ShieldCheck } from "lucide-react";
 import { CascadeRulesImport } from "../components/CascadeRulesImport";
 import type { AppState } from "../types/app";
 import { generatePassword } from "../utils/password";
@@ -18,25 +18,105 @@ export function SettingsTab({
   onToggleSecrets,
   onGetJournal,
 }: Props) {
+  const chainMode = state.chainMode || "udp-relay";
+
   return (
     <section className="content-page route-settings">
       <div className="settings-grid">
-        <div className="table-card settings-card">
-          <div className="settings-section">
+        <div className="table-card settings-card settings-card-wide settings-journal-card">
+          <div className="settings-section settings-section-tight">
             <div className="section-icon">
               <Radio size={16} />
             </div>
             <div>
               <b>Журнал сервиса</b>
               <small>
-                Получить записи HopLink за выбранный период с выбранного узла.
+                Записи HopLink с узла маршрута за выбранный период.
               </small>
             </div>
+            <button className="btn secondary" onClick={onGetJournal}>
+              Получить журнал…
+            </button>
           </div>
-          <button className="btn secondary" onClick={onGetJournal}>
-            Получить журнал…
-          </button>
         </div>
+
+        <div className="table-card settings-card">
+          <div className="settings-section">
+            <div className="section-icon">
+              <Radio size={16} />
+            </div>
+            <div>
+              <b>Сеть и узлы</b>
+              <small>Порт, домен входа и поведение серверов на карте.</small>
+            </div>
+          </div>
+          <div className="field-row">
+            <label className="field">
+              UDP порт
+              <input
+                className="port-field"
+                type="number"
+                min="1"
+                max="65535"
+                value={state.port}
+                onChange={(event) =>
+                  onChange({ port: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label className="field">
+              Домен входного узла (необязательно)
+              <input
+                value={state.entryDomain}
+                onChange={(event) =>
+                  onChange({ entryDomain: event.target.value })
+                }
+                placeholder="vpn.example.com"
+              />
+            </label>
+          </div>
+          <small className="field-hint settings-inline-hint">
+            В ссылку подключения добавляется порт маршрута: {state.port}.
+          </small>
+          <label className="field">
+            Уровень логирования узлов
+            <select
+              value={state.logLevel || "warn"}
+              onChange={(event) =>
+                onChange({
+                  logLevel: event.target.value as typeof state.logLevel,
+                })
+              }
+            >
+              <option value="error">Только ошибки</option>
+              <option value="warn">Предупреждения</option>
+              <option value="info">Информация</option>
+              <option value="debug">Отладка</option>
+              <option value="trace">Подробная трассировка</option>
+            </select>
+            <small className="field-hint">
+              Применяется ко всем узлам маршрута при нажатии «Применить».
+            </small>
+          </label>
+          <label className="checkbox-field settings-toggle-field">
+            <input
+              type="checkbox"
+              checked={!!state.disableServerPing}
+              onChange={(event) =>
+                onChange({ disableServerPing: event.target.checked })
+              }
+            />
+            <span>
+              Отключить ICMP ping на серверах маршрута при применении
+            </span>
+          </label>
+          <small className="field-hint">
+            На каждом узле цепочки создаётся sysctl-настройка (один раз).
+            Снятие сервера с карты или выключение этой опции ответ на ping не
+            включает.
+          </small>
+        </div>
+
         <div className="table-card settings-card">
           <div className="settings-section">
             <div className="section-icon">
@@ -44,13 +124,13 @@ export function SettingsTab({
             </div>
             <div>
               <b>Hysteria2</b>
-              <small>Параметры входного и межсерверных подключений.</small>
+              <small>Режим цепочки, маскировка и транспорт между hop.</small>
             </div>
           </div>
           <label className="field">
             Режим цепочки
             <select
-              value={state.chainMode || "udp-relay"}
+              value={chainMode}
               onChange={(event) =>
                 onChange({ chainMode: event.target.value as AppState["chainMode"] })
               }
@@ -63,51 +143,10 @@ export function SettingsTab({
               </option>
             </select>
             <small className="field-hint">
-              В каскадном режиме клиентские ссылки всегда ведут на входной узел;
-              сертификат и пользователи тоже ставятся на вход.
+              В каскадном режиме клиентские ссылки ведут на вход; сертификат и
+              пользователи на входном узле.
             </small>
           </label>
-          {(state.chainMode || "udp-relay") === "hy2-cascade" && (
-            <>
-              <CascadeRulesImport
-                domainPatterns={state.cascadeDomainPatterns || ""}
-                sniPatterns={state.cascadeSNIPatterns || ""}
-                onChange={onChange}
-              />
-              <label className="field">
-                Прямой выход с входа: домены (по строке)
-                <textarea
-                  rows={4}
-                  value={state.cascadeDomainPatterns || ""}
-                  onChange={(event) =>
-                    onChange({ cascadeDomainPatterns: event.target.value })
-                  }
-                  placeholder={"domain:ru\\ndomain:yandex.ru"}
-                />
-                <small className="field-hint">
-                  По строке: regex, либо{" "}
-                  <code>domain:имя</code>, <code>keyword:текст</code>,{" "}
-                  <code>full:хост</code> (как в sing-box/Clash). Не совпавший
-                  трафик уходит дальше по цепочке.
-                </small>
-              </label>
-              <label className="field">
-                Прямой выход с входа: SNI TLS (по строке)
-                <textarea
-                  rows={4}
-                  value={state.cascadeSNIPatterns || ""}
-                  onChange={(event) =>
-                    onChange({ cascadeSNIPatterns: event.target.value })
-                  }
-                  placeholder={"(?i)\\.ru$"}
-                />
-                <small className="field-hint">
-                  Для TCP проверяется SNI из ClientHello. Пустые списки — весь
-                  трафик через следующий hop.
-                </small>
-              </label>
-            </>
-          )}
           <label className="field">
             SNI
             <input
@@ -116,7 +155,7 @@ export function SettingsTab({
               placeholder="Оставьте пустым, чтобы не отправлять"
             />
             <small className="field-hint">
-              Пустое значение не добавляется в ссылку и не подставляется
+              Пустое значение не попадает в ссылку и не подставляется
               автоматически.
             </small>
           </label>
@@ -127,7 +166,6 @@ export function SettingsTab({
               onChange={(event) =>
                 onChange({
                   obfsType: event.target.value as AppState["obfsType"],
-                  obfsPassword: event.target.value ? state.obfsPassword : "",
                 })
               }
             >
@@ -149,8 +187,8 @@ export function SettingsTab({
                   }
                 />
                 <small className="field-hint">
-                  Один и тот же пароль используется HopLink и клиентом. При
-                  смене режима примените маршрут заново.
+                  Тот же пароль у HopLink и у клиента; после смены — снова
+                  «Применить».
                 </small>
               </label>
               <button
@@ -166,7 +204,7 @@ export function SettingsTab({
             Транспорт между реле
             <select
               value={state.relayTransport || "udp"}
-              disabled={(state.chainMode || "udp-relay") === "hy2-cascade"}
+              disabled={chainMode === "hy2-cascade"}
               onChange={(event) =>
                 onChange({
                   relayTransport: event.target
@@ -181,64 +219,72 @@ export function SettingsTab({
               </option>
             </select>
             <small className="field-hint">
-              {(state.chainMode || "udp-relay") === "hy2-cascade"
-                ? "В каскадном режиме межсерверные подключения — отдельные сессии Hysteria2 по UDP."
+              {chainMode === "hy2-cascade"
+                ? "В каскаде между hop — Hysteria2 по UDP."
                 : state.relayTransport === "ws"
-                ? `WSS между реле шифруется основным TLS-сертификатом маршрута. Порт транспорта: ${(state.port || 22033) + 1}.`
-                : state.relayTransport === "ssh"
-                  ? `SSH режим передаёт QUIC-пакеты между узлами через зашифрованный канал; порт SSH-транспорта: ${(state.port || 22033) + 1}.`
-                  : "Прямая передача UDP между узлами цепочки."}
-            </small>
-          </label>
-          <label className="field">
-            UDP порт
-            <input
-              type="number"
-              min="1"
-              max="65535"
-              value={state.port}
-              onChange={(event) =>
-                onChange({ port: Number(event.target.value) })
-              }
-            />
-          </label>
-          <label className="field">
-            Домен входного узла (необязательно)
-            <input
-              value={state.entryDomain}
-              onChange={(event) =>
-                onChange({ entryDomain: event.target.value })
-              }
-              placeholder="vpn.example.com"
-            />
-            <small className="field-hint">
-              В ссылку подключения будет добавлен порт маршрута: {state.port}.
-            </small>
-          </label>
-          <label className="field">
-            Уровень логирования узлов
-            <select
-              value={state.logLevel || "warn"}
-              onChange={(event) =>
-                onChange({
-                  logLevel: event.target.value as typeof state.logLevel,
-                })
-              }
-            >
-              <option value="error">Только ошибки</option>
-              <option value="warn">Предупреждения</option>
-              <option value="info">Информация</option>
-              <option value="debug">Отладка</option>
-              <option value="trace">Подробная трассировка</option>
-            </select>
-            <small className="field-hint">
-              Уровень применяется ко всем узлам маршрута при нажатии
-              «Применить».
+                  ? `WSS шифруется TLS-сертификатом маршрута; порт транспорта: ${(state.port || 22033) + 1}.`
+                  : state.relayTransport === "ssh"
+                    ? `QUIC через SSH; порт транспорта: ${(state.port || 22033) + 1}.`
+                    : "Прямой UDP между узлами цепочки."}
             </small>
           </label>
         </div>
 
-        <div className="table-card settings-card">
+        {chainMode === "hy2-cascade" && (
+          <div className="table-card settings-card settings-card-wide settings-rules-card">
+            <div className="settings-section">
+              <div className="section-icon">
+                <ListFilter size={16} />
+              </div>
+              <div>
+                <b>Правила прямого выхода</b>
+                <small>
+                  Совпавший с правилом трафик с входа выходит напрямую с
+                  входного узла; остальной идёт дальше по цепочке.
+                </small>
+              </div>
+            </div>
+            <CascadeRulesImport
+              domainPatterns={state.cascadeDomainPatterns || ""}
+              sniPatterns={state.cascadeSNIPatterns || ""}
+              onChange={onChange}
+            />
+            <div className="settings-rules-fields">
+              <label className="field">
+                Домены (по строке)
+                <textarea
+                  rows={5}
+                  value={state.cascadeDomainPatterns || ""}
+                  onChange={(event) =>
+                    onChange({ cascadeDomainPatterns: event.target.value })
+                  }
+                  placeholder={"domain:ru\\ndomain:yandex.ru"}
+                />
+                <small className="field-hint">
+                  Regex, <code>domain:имя</code>, <code>keyword:текст</code>,{" "}
+                  <code>full:хост</code> (как в sing-box/Clash).
+                </small>
+              </label>
+              <label className="field">
+                SNI TLS (по строке)
+                <textarea
+                  rows={5}
+                  value={state.cascadeSNIPatterns || ""}
+                  onChange={(event) =>
+                    onChange({ cascadeSNIPatterns: event.target.value })
+                  }
+                  placeholder={"(?i)\\.ru$"}
+                />
+                <small className="field-hint">
+                  SNI из ClientHello для TCP. Пустые списки — весь трафик на
+                  следующий hop.
+                </small>
+              </label>
+            </div>
+          </div>
+        )}
+
+        <div className="table-card settings-card settings-card-wide">
           <div className="settings-section">
             <div className="section-icon">
               <KeyRound size={16} />
@@ -246,7 +292,7 @@ export function SettingsTab({
             <div>
               <b>Ключи и сертификаты</b>
               <small>
-                Секреты хранятся в зашифрованных настройках выбранного маршрута.
+                Секреты маршрута в зашифрованных настройках.
               </small>
             </div>
             <button className="text-btn" onClick={onToggleSecrets}>
@@ -254,7 +300,7 @@ export function SettingsTab({
             </button>
           </div>
           {showSecrets ? (
-            <>
+            <div className="settings-secrets-grid">
               <label className="field">
                 Общий ключ цепочки
                 <textarea
@@ -285,10 +331,7 @@ export function SettingsTab({
                   }
                 />
               </label>
-              {!!state.certificateLifetime && (
-                <p className="field-hint">{state.certificateLifetime}</p>
-              )}
-            </>
+            </div>
           ) : (
             <div className="secret-state">
               <ShieldCheck size={18} />
@@ -307,42 +350,8 @@ export function SettingsTab({
               </span>
             </div>
           )}
-        </div>
-
-        <div className="table-card settings-card">
-          <div className="settings-section">
-            <div className="section-icon">
-              <ShieldCheck size={16} />
-            </div>
-            <div>
-              <b>Доверенные SSH ключи</b>
-              <small>Закреплённые fingerprints серверов.</small>
-            </div>
-          </div>
-          {Object.entries(state.knownHosts || {}).length ? (
-            Object.entries(state.knownHosts).map(([host, fingerprint]) => (
-              <div className="trust-row" key={host}>
-                <span>{host}</span>
-                <code>{fingerprint}</code>
-                <button
-                  className="icon-btn danger"
-                  title="Удалить доверенный ключ"
-                  onClick={() => {
-                    const knownHosts = { ...state.knownHosts };
-                    delete knownHosts[host];
-                    onChange({ knownHosts });
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ))
-          ) : (
-            <div className="secret-state">
-              <span className="muted">
-                Fingerprint будет запрошен при первом SSH-подключении.
-              </span>
-            </div>
+          {showSecrets && !!state.certificateLifetime && (
+            <p className="field-hint">{state.certificateLifetime}</p>
           )}
         </div>
       </div>

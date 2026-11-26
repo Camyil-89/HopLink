@@ -29,6 +29,7 @@ export function routeSnapshot(
     chainMode?: string;
     cascadeDomainPatterns?: string;
     cascadeSNIPatterns?: string;
+    disableServerPing?: boolean;
   },
 ) {
   return JSON.stringify({
@@ -58,6 +59,7 @@ export function routeSnapshot(
       chainMode: settings.chainMode || "udp-relay",
       cascadeDomainPatterns: settings.cascadeDomainPatterns || "",
       cascadeSNIPatterns: settings.cascadeSNIPatterns || "",
+      disableServerPing: !!settings.disableServerPing,
     },
   });
 }
