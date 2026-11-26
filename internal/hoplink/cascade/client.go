@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"hoplink/internal/hoplink/hysteria"
 	"hoplink/internal/hoplink/obfs"
 
 	hyclient "github.com/apernet/hysteria/core/v2/client"
@@ -25,6 +26,7 @@ func (f obfsConnFactory) New(_ net.Addr) (net.PacketConn, error) {
 	if err != nil {
 		return nil, err
 	}
+	hysteria.GrowUDPBuffers(pc)
 	if f.mode == "" {
 		return pc, nil
 	}
@@ -86,6 +88,13 @@ func newUpstreamClient(nextAddr, chainKey, sni, trustCert, obfsMode, obfsPasswor
 					}
 					return nil
 				},
+			},
+			CongestionConfig: hyclient.CongestionConfig{Type: "bbr", BBRProfile: "standard"},
+			QUICConfig: hyclient.QUICConfig{
+				InitialStreamReceiveWindow:     16 << 20,
+				MaxStreamReceiveWindow:         16 << 20,
+				InitialConnectionReceiveWindow: 32 << 20,
+				MaxConnectionReceiveWindow:     32 << 20,
 			},
 			BandwidthConfig: hyclient.BandwidthConfig{MaxRx: 1_000_000_000},
 		}, nil

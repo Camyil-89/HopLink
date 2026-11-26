@@ -3,6 +3,7 @@ package cascade
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"hoplink/internal/hoplink/log"
@@ -22,7 +23,7 @@ type directOutbound struct {
 }
 
 func newDirectOutbound() *directOutbound {
-	return &directOutbound{dialer: net.Dialer{Timeout: 10 * time.Second}}
+	return &directOutbound{dialer: net.Dialer{Timeout: 10 * time.Second, Control: controlOutbound}}
 }
 
 func (o *directOutbound) TCP(reqAddr string) (net.Conn, error) {
@@ -34,12 +35,20 @@ func (o *directOutbound) UDP(reqAddr string) (hyserver.UDPConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &directUDPConn{conn}, nil
+	return &directUDPConn{UDPConn: conn}, nil
 }
 
 func (o *directOutbound) CheckUDP(_ string) error { return nil }
 
-type directUDPConn struct{ *net.UDPConn }
+type resolvedUDP struct {
+	raw  string
+	addr *net.UDPAddr
+}
+
+type directUDPConn struct {
+	*net.UDPConn
+	last atomic.Pointer[resolvedUDP]
+}
 
 func (c *directUDPConn) ReadFrom(b []byte) (int, string, error) {
 	n, addr, err := c.UDPConn.ReadFrom(b)
@@ -50,10 +59,14 @@ func (c *directUDPConn) ReadFrom(b []byte) (int, string, error) {
 }
 
 func (c *directUDPConn) WriteTo(b []byte, addr string) (int, error) {
+	if cur := c.last.Load(); cur != nil && cur.raw == addr {
+		return c.UDPConn.WriteTo(b, cur.addr)
+	}
 	uAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return 0, err
 	}
+	c.last.Store(&resolvedUDP{raw: addr, addr: uAddr})
 	return c.UDPConn.WriteTo(b, uAddr)
 }
 
@@ -90,8 +103,8 @@ func (o *chainOutbound) UDP(reqAddr string) (hyserver.UDPConn, error) {
 func (o *chainOutbound) CheckUDP(_ string) error { return nil }
 
 type chainUDPConn struct {
-	conn    hyclient.HyUDPConn
 	reqAddr string
+	conn    hyclient.HyUDPConn
 }
 
 func (c *chainUDPConn) ReadFrom(b []byte) (int, string, error) {
@@ -114,13 +127,13 @@ func (c *chainUDPConn) Close() error { return c.conn.Close() }
 
 // entryRouter sniffs TLS SNI on the entry hop and picks direct vs upstream outbound per stream.
 type entryRouter struct {
+	forceLocal bool
+	direct     *directOutbound
+	chain      *chainOutbound
+
 	domainPatterns Matcher
 	sniPatterns    Matcher
-	direct         *directOutbound
-	chain          *chainOutbound
-
-	pending    pendingRoutes
-	forceLocal bool
+	pending        pendingRoutes
 }
 
 func newEntryRouter(next string, domainPatterns, sniPatterns Matcher, chain *chainOutbound) *entryRouter {

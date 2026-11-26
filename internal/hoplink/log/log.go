@@ -55,6 +55,8 @@ func logAt(level int32, format string, args ...any) {
 	log.Printf("["+label+"] "+format, args...)
 }
 
+func TraceEnabled() bool { return currentLogLevel.Load() <= levelTrace }
+
 func Debugf(format string, args ...any) { logAt(levelDebug, format, args...) }
 func Tracef(format string, args ...any) { logAt(levelTrace, format, args...) }
 func Infof(format string, args ...any)  { logAt(levelInfo, format, args...) }

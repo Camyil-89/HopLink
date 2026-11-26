@@ -5,15 +5,20 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"unsafe"
 )
 
 const MaxPayload = 65535
 
-var framePool = sync.Pool{
-	New: func() any {
-		return make([]byte, 0, 2048)
-	},
-}
+const (
+	smallFrameCap = 2048
+	largeFrameCap = 16 << 10
+)
+
+var (
+	smallFramePool = sync.Pool{New: func() any { return new([smallFrameCap]byte) }}
+	largeFramePool = sync.Pool{New: func() any { return new([largeFrameCap]byte) }}
+)
 
 func Write(w io.Writer, src string, payload []byte) error {
 	frame, err := EncodeBytes(src, payload)
@@ -47,13 +52,7 @@ func EncodeBytes(src string, payload []byte) ([]byte, error) {
 		return nil, fmt.Errorf("relay udp frame too large")
 	}
 	need := 6 + len(src) + len(payload)
-	buf := framePool.Get().([]byte)
-	if cap(buf) < need {
-		framePool.Put(buf[:0])
-		buf = make([]byte, need)
-	} else {
-		buf = buf[:need]
-	}
+	buf := takeFrame(need)
 	binary.BigEndian.PutUint16(buf[0:2], uint16(len(src)))
 	binary.BigEndian.PutUint32(buf[2:6], uint32(len(payload)))
 	copy(buf[6:], src)
@@ -61,11 +60,29 @@ func EncodeBytes(src string, payload []byte) ([]byte, error) {
 	return buf, nil
 }
 
+func takeFrame(n int) []byte {
+	switch {
+	case n <= smallFrameCap:
+		a := smallFramePool.Get().(*[smallFrameCap]byte)
+		return a[:n]
+	case n <= largeFrameCap:
+		a := largeFramePool.Get().(*[largeFrameCap]byte)
+		return a[:n]
+	default:
+		return make([]byte, n)
+	}
+}
+
 func ReleaseFrame(frame []byte) {
-	if frame == nil {
+	if len(frame) == 0 && cap(frame) == 0 {
 		return
 	}
-	framePool.Put(frame[:0])
+	switch cap(frame) {
+	case smallFrameCap:
+		smallFramePool.Put((*[smallFrameCap]byte)(unsafe.Pointer(unsafe.SliceData(frame))))
+	case largeFrameCap:
+		largeFramePool.Put((*[largeFrameCap]byte)(unsafe.Pointer(unsafe.SliceData(frame))))
+	}
 }
 
 func WalkFrames(frame []byte, fn func(src string, payload []byte) error) error {
