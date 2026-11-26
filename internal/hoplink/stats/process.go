@@ -104,11 +104,14 @@ func (c *Collector) sampleProcessLocked() {
 	c.procLastCPU = sample.cpuUsecs
 
 	if sample.rssKB > 0 {
-		c.procDayRssLast = sample.rssKB
-		if sample.rssKB > c.procDayRssMax {
-			c.procDayRssMax = sample.rssKB
+		// First sample after load only seeds CPU baseline; keep persisted current RSS.
+		if !(first && c.procCurrentRss > 0) {
+			c.procDayRssLast = sample.rssKB
+			if sample.rssKB > c.procDayRssMax {
+				c.procDayRssMax = sample.rssKB
+			}
+			c.procCurrentRss = sample.rssKB
 		}
-		c.procCurrentRss = sample.rssKB
 	}
 	if first {
 		return
