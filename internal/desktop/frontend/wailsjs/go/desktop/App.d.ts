@@ -24,6 +24,8 @@ export function GetLinks():Promise<Record<string, string>>;
 
 export function GetRouteJournal(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 
+export function GetRouteTrafficStats(arg1:string):Promise<Array<desktop.RouteHopStats>>;
+
 export function GetState():Promise<desktop.AppConfig>;
 
 export function GetUserLinkVariants(arg1:string):Promise<Record<string, string>>;

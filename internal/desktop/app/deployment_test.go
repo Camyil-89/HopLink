@@ -61,7 +61,7 @@ func TestRouteNodeArgsOnlyExitTerminatesTLS(t *testing.T) {
 	order := []Server{{Host: "entry.example"}, {Host: "middle.example"}, {Host: "exit.example"}}
 	for i := 0; i < 2; i++ {
 		args := routeNodeArgs(cfg, order, i, "/opt/route")
-		want := []string{"/opt/route/HopLink", "-hy2-listen", ":22033", "-log-level", "warn", "-mode", "udp-relay", "-f", order[i+1].Host + ":22033"}
+		want := []string{"/opt/route/HopLink", "-hy2-listen", ":22033", "-log-level", "warn", "-mode", "udp-relay", "-f", order[i+1].Host + ":22033", "-stats-file", "stats.json"}
 		if !reflect.DeepEqual(args, want) {
 			t.Fatalf("relay args: %v, want %v", args, want)
 		}
@@ -91,7 +91,7 @@ func TestRouteNodeArgsConfigureObfuscationWithoutCommandLineSecret(t *testing.T)
 	cfg := AppConfig{Port: 22033, SNI: "example.com", ObfsType: "gecko", ObfsPassword: "secret-mask"}
 	order := []Server{{Host: "entry.example"}, {Host: "exit.example"}}
 	relay := routeNodeArgs(cfg, order, 0, "/opt/route")
-	if !reflect.DeepEqual(relay[len(relay)-2:], []string{"-relay-obfs", "gecko"}) {
+	if !reflect.DeepEqual(relay[len(relay)-4:], []string{"-relay-obfs", "gecko", "-stats-file", "stats.json"}) {
 		t.Fatalf("relay args = %v", relay)
 	}
 	exit := routeNodeArgs(cfg, order, 1, "/opt/route")

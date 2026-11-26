@@ -3,6 +3,8 @@ import { RoutesTab } from "../tabs/RoutesTab";
 import { MapTab } from "../tabs/MapTab";
 import { SettingsTab } from "../tabs/SettingsTab";
 import { UsersTab } from "../tabs/UsersTab";
+import { StatsTab } from "../tabs/StatsTab";
+import { UserStatsTab } from "../tabs/UserStatsTab";
 import { ServersTab } from "../tabs/ServersTab";
 import { RemoveTab } from "../tabs/RemoveTab";
 import { DesktopSettingsTab } from "../tabs/DesktopSettingsTab";
@@ -163,6 +165,16 @@ export function AppMain({ app }: Props) {
               onToggleSecrets={() => app.setShowSecrets((value) => !value)}
               onGetJournal={() => app.setJournalOpen(true)}
             />
+          )}
+        {app.page === "routes" &&
+          app.routeChosen &&
+          app.routeTab === "userStats" && (
+            <UserStatsTab state={app.state} busy={app.busy} />
+          )}
+        {app.page === "routes" &&
+          app.routeChosen &&
+          app.routeTab === "stats" && (
+            <StatsTab state={app.state} busy={app.busy} />
           )}
         {app.page === "routes" &&
           app.routeChosen &&

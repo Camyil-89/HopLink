@@ -255,7 +255,272 @@ export namespace desktop {
 	    }
 	}
 	
+	export class ProcessCpuDay {
+	    avg: number;
+	    max: number;
 	
+	    static createFrom(source: any = {}) {
+	        return new ProcessCpuDay(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.avg = source["avg"];
+	        this.max = source["max"];
+	    }
+	}
+	export class ProcessRssDay {
+	    last: number;
+	    max: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProcessRssDay(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.last = source["last"];
+	        this.max = source["max"];
+	    }
+	}
+	export class ProcessDay {
+	    date: string;
+	    rssKB: ProcessRssDay;
+	    cpuPct: ProcessCpuDay;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProcessDay(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.date = source["date"];
+	        this.rssKB = this.convertValues(source["rssKB"], ProcessRssDay);
+	        this.cpuPct = this.convertValues(source["cpuPct"], ProcessCpuDay);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ProcessCurrent {
+	    rssKB: number;
+	    cpuPct: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProcessCurrent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.rssKB = source["rssKB"];
+	        this.cpuPct = source["cpuPct"];
+	    }
+	}
+	export class ProcessStats {
+	    sampledAt?: string;
+	    sampleIntervalSec?: number;
+	    current: ProcessCurrent;
+	    days: ProcessDay[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ProcessStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sampledAt = source["sampledAt"];
+	        this.sampleIntervalSec = source["sampleIntervalSec"];
+	        this.current = this.convertValues(source["current"], ProcessCurrent);
+	        this.days = this.convertValues(source["days"], ProcessDay);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TrafficUser {
+	    id: string;
+	    in: number;
+	    out: number;
+	    days: TrafficDay[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TrafficUser(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.in = source["in"];
+	        this.out = source["out"];
+	        this.days = this.convertValues(source["days"], TrafficDay);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TrafficDay {
+	    date: string;
+	    in: number;
+	    out: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new TrafficDay(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.date = source["date"];
+	        this.in = source["in"];
+	        this.out = source["out"];
+	    }
+	}
+	export class TrafficVolume {
+	    in: number;
+	    out: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new TrafficVolume(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.in = source["in"];
+	        this.out = source["out"];
+	    }
+	}
+	export class HopTrafficStats {
+	    total: TrafficVolume;
+	    days: TrafficDay[];
+	    users: TrafficUser[];
+	    process?: ProcessStats;
+	
+	    static createFrom(source: any = {}) {
+	        return new HopTrafficStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.total = this.convertValues(source["total"], TrafficVolume);
+	        this.days = this.convertValues(source["days"], TrafficDay);
+	        this.users = this.convertValues(source["users"], TrafficUser);
+	        this.process = this.convertValues(source["process"], ProcessStats);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
+	
+	
+	
+	
+	export class RouteHopStats {
+	    serverId: string;
+	    serverHost: string;
+	    serverName: string;
+	    serviceDir: string;
+	    statsPath: string;
+	    statsEnabled: boolean;
+	    stats: HopTrafficStats;
+	    missing: boolean;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RouteHopStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.serverId = source["serverId"];
+	        this.serverHost = source["serverHost"];
+	        this.serverName = source["serverName"];
+	        this.serviceDir = source["serviceDir"];
+	        this.statsPath = source["statsPath"];
+	        this.statsEnabled = source["statsEnabled"];
+	        this.stats = this.convertValues(source["stats"], HopTrafficStats);
+	        this.missing = source["missing"];
+	        this.error = source["error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ServerServiceStatus {
 	    serverId: string;
 	    running: boolean;
@@ -324,6 +589,9 @@ export namespace desktop {
 		    return a;
 		}
 	}
+	
+	
+	
 	
 	
 	

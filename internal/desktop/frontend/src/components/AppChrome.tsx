@@ -7,8 +7,17 @@ import {
   Settings2,
   Trash2,
   UserRound,
+  BarChart3,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
+
+export type RouteWorkspaceTab =
+  | "map"
+  | "settings"
+  | "users"
+  | "userStats"
+  | "stats";
 import appIcon from "../assets/images/hoplink-icon.png";
 
 export type NavigationItem = { id: string; label: string; icon: LucideIcon };
@@ -97,12 +106,12 @@ export function Topbar({
 
 type RouteHeaderProps = {
   routeName: string;
-  tab: "map" | "settings" | "users";
+  tab: RouteWorkspaceTab;
   dirty: boolean;
   installedServers: number;
   busy: boolean;
   onBack: () => void;
-  onTabChange: (tab: "map" | "settings" | "users") => void;
+  onTabChange: (tab: RouteWorkspaceTab) => void;
   onSave: () => void;
   onRemoveService: () => void;
 };
@@ -131,7 +140,11 @@ export function RouteWorkspaceHeader({
               ? "Карта маршрута"
               : tab === "settings"
                 ? "Настройки и сертификаты"
-                : "Пользователи этого маршрута"}
+                : tab === "userStats"
+                  ? "Трафик пользователей"
+                  : tab === "stats"
+                    ? "Узлы и ресурсы"
+                    : "Пользователи этого маршрута"}
           </small>
           <button
             className="text-btn route-remove-service"
@@ -171,6 +184,18 @@ export function RouteWorkspaceHeader({
           onClick={() => onTabChange("users")}
         >
           <UserRound size={15} /> Пользователи
+        </button>
+        <button
+          className={tab === "userStats" ? "active" : ""}
+          onClick={() => onTabChange("userStats")}
+        >
+          <Activity size={15} /> Трафик
+        </button>
+        <button
+          className={tab === "stats" ? "active" : ""}
+          onClick={() => onTabChange("stats")}
+        >
+          <BarChart3 size={15} /> Узлы
         </button>
       </div>
     </section>

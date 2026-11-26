@@ -237,6 +237,21 @@ func routeRemoteLayout(routeID string, routes []Route) (string, string) {
 	return remoteDir, serviceName
 }
 
+func routeInstallDir(route Route) string {
+	if route.LegacyLayout {
+		return remoteDir
+	}
+	if route.LegacyIDLayout {
+		id := route.ID
+		if len(id) > 32 {
+			id = id[:32]
+		}
+		return "/opt/hoplink-routes/" + id
+	}
+	dir, _ := routeRemoteLayout(route.ID, []Route{route})
+	return dir
+}
+
 func indexedRouteLayout(index int) (string, string) {
 	if index < 1 {
 		index = 1
